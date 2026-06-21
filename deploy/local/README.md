@@ -58,3 +58,19 @@ docker compose -f deploy/local/docker-compose.yaml down -v
 When `OLLAMA_BASE_URL` is set, the gateway adds `OLLAMA_MODEL` (default: `qwen2.5:1.5b`) as a route to `<OLLAMA_BASE_URL>/v1`. An explicit entry in `MODEL_TARGETS` for the same model name wins, so GitOps configuration can override the local route deterministically.
 
 Ollama's OpenAI-compatible endpoint supports `/v1/chat/completions`; this is why the gateway can use the same request contract in both demo and production profiles. See the [Ollama OpenAI compatibility documentation](https://docs.ollama.com/api/openai-compatibility).
+
+## Docker DNS troubleshooting
+
+Ollama downloads models from a Cloudflare R2 hostname. Some Docker Desktop DNS configurations fail to resolve that hostname even when the macOS host can resolve it. The Compose profile therefore sets public resolvers for the `ollama` service by default:
+
+```sh
+LOCAL_DEMO_DNS_PRIMARY=1.1.1.1 \
+LOCAL_DEMO_DNS_SECONDARY=8.8.8.8 \
+docker compose -f deploy/local/docker-compose.yaml up --build
+```
+
+For a corporate network, replace those values with the organisation-approved resolver addresses. After changing the Compose configuration, recreate the stack without deleting the model volume:
+
+```sh
+docker compose -f deploy/local/docker-compose.yaml up --build --force-recreate
+```

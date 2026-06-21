@@ -82,6 +82,13 @@ def request_cost(usage: dict[str, int] | None, target: ModelTarget) -> float | N
     )
 
 
+def chat_completions_url(base_url: str) -> str:
+    """Build a chat-completions endpoint from an OpenAI-compatible base URL."""
+    normalized = base_url.rstrip("/")
+    suffix = "/chat/completions" if normalized.endswith("/v1") else "/v1/chat/completions"
+    return f"{normalized}{suffix}"
+
+
 def configure_tracing() -> None:
     provider = TracerProvider(resource=Resource.create({"service.name": "ai-runtime-gateway"}))
     provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
@@ -127,7 +134,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     started_at = time.monotonic()
     headers = {"x-request-id": request_id}
-    upstream_url = f"{target.url.rstrip('/')}/v1/chat/completions"
+    upstream_url = chat_completions_url(target.url)
     with trace.get_tracer(__name__).start_as_current_span("gen_ai.chat") as span:
         span.set_attribute("gen_ai.request.model", model)
         span.set_attribute("gen_ai.operation.name", "chat")

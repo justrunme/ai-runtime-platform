@@ -3,6 +3,9 @@ name: ai-runtime-local
 services:
   ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.13.4}
+    dns:
+      - ${LOCAL_DEMO_DNS_PRIMARY:-1.1.1.1}
+      - ${LOCAL_DEMO_DNS_SECONDARY:-8.8.8.8}
     volumes:
       - ollama-models:/root/.ollama
     ports:
