@@ -17,3 +17,17 @@ def test_model_targets_accept_gitops_json_environment(monkeypatch) -> None:
         '{"small":{"url":"http://model","input_cost_per_million":0.1,"output_cost_per_million":0.2}}',
     )
     assert GatewaySettings.from_environment().model_targets["small"].url == "http://model"
+
+
+def test_ollama_target_is_added_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+    target = GatewaySettings.from_environment().model_targets["qwen2.5:1.5b"]
+    assert target.url == "http://ollama:11434/v1"
+    assert target.input_cost_per_million == 0
+
+
+def test_ollama_base_url_is_not_given_a_second_v1_suffix(monkeypatch) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama:11434/v1/")
+    target = GatewaySettings.from_environment().model_targets["qwen2.5:1.5b"]
+    assert target.url == "http://ollama:11434/v1"
