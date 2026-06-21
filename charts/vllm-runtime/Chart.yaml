@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vllm-runtime
+description: A GPU-scheduled vLLM OpenAI-compatible inference runtime
+type: application
+version: 0.1.0
+appVersion: "v0.13.0"

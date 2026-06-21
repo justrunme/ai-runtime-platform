@@ -1,0 +1,23 @@
+# KEDA and Prometheus must be installed before applying this resource.
+# This governs the Helm release's Deployment; do not combine it with an HPA for the same target.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: qwen-vllm-queue
+  namespace: ai-runtime
+spec:
+  scaleTargetRef:
+    name: qwen-vllm-runtime
+  pollingInterval: 15
+  cooldownPeriod: 180
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+        metricName: vllm_requests_waiting
+        query: sum(vllm:num_requests_waiting{namespace="ai-runtime"})
+        threshold: "4"
+        activationThreshold: "1"
+        ignoreNullValues: "false"
