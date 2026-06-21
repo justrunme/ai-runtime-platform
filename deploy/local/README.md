@@ -5,7 +5,7 @@ This profile runs the same OpenAI-compatible gateway used in the Kubernetes path
 ## Prerequisites
 
 - Docker Desktop or Docker Engine with Compose v2.
-- At least 8 GB RAM available to Docker. The default `qwen2.5:1.5b` model download is roughly 1 GB; larger models need materially more memory and disk.
+- At least 8 GB RAM available to Docker and 6 GB free disk. The ARM64 Ollama runtime image is roughly 3 GB compressed, and the default `qwen2.5:1.5b` model adds roughly 1 GB; larger models need materially more memory and disk.
 
 ## Run the demo
 
