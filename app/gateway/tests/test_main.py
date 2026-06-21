@@ -1,4 +1,5 @@
 import pytest
+import httpx
 
 from app.gateway.main import (
     GatewaySettings,
@@ -6,7 +7,9 @@ from app.gateway.main import (
     ModelTarget,
     RouteTarget,
     chat_completions_url,
+    post_completion_with_fallback,
     request_cost,
+    resolve_route,
     select_route_target,
 )
 
@@ -68,3 +71,62 @@ def test_settings_reject_route_model_that_has_no_target(monkeypatch) -> None:
     )
     with pytest.raises(ValueError, match="unknown models"):
         GatewaySettings.from_environment()
+
+
+def test_failover_route_resolves_primary_and_fallback() -> None:
+    route = ModelRoute(primary="qwen2.5:1.5b", fallback="llama3.2:1b")
+    assert resolve_route(route, "request-42", "small-chat") == ("qwen2.5:1.5b", "llama3.2:1b")
+
+
+@pytest.mark.anyio
+async def test_healthy_primary_does_not_use_fallback() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    primary = ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0)
+    fallback = ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        _, selected, fallback_used = await post_completion_with_fallback(
+            client, {"messages": []}, {}, "qwen", primary, "llama", fallback
+        )
+    assert (selected, fallback_used) == ("qwen", False)
+    assert requests == ["http://primary/v1/chat/completions"]
+
+
+@pytest.mark.anyio
+async def test_timeout_retries_fallback_model() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.host or "")
+        if request.url.host == "primary":
+            raise httpx.ReadTimeout("primary timed out", request=request)
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    primary = ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0)
+    fallback = ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        _, selected, fallback_used = await post_completion_with_fallback(
+            client, {"messages": []}, {}, "qwen", primary, "llama", fallback
+        )
+    assert (selected, fallback_used) == ("llama", True)
+    assert requests == ["primary", "fallback"]
+
+
+@pytest.mark.anyio
+async def test_server_error_retries_fallback_model() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "primary":
+            return httpx.Response(503, request=request)
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    primary = ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0)
+    fallback = ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        _, selected, fallback_used = await post_completion_with_fallback(
+            client, {"messages": []}, {}, "qwen", primary, "llama", fallback
+        )
+    assert (selected, fallback_used) == ("llama", True)

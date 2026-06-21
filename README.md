@@ -107,7 +107,7 @@ The gateway supports a virtual model alias that resolves to weighted backends. T
 
 ```json
 {
-  "small-chat": {
+  "small-chat-canary": {
     "targets": [
       {"model": "qwen2.5:1.5b", "weight": 90},
       {"model": "llama3.2:1b", "weight": 10}
@@ -124,10 +124,25 @@ curl http://localhost:8080/v1/routes
 curl http://localhost:8080/v1/chat/completions \
   -H 'content-type: application/json' \
   -H 'x-request-id: canary-demo-001' \
-  -d '{"model":"small-chat","messages":[{"role":"user","content":"Hello"}]}'
+  -d '{"model":"small-chat-canary","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
 Route percentages control request allocation, not quality or safety. Promote a canary only after evaluating comparable latency, error, token-throughput, cost, and task-quality signals.
+
+## Model fallback routing
+
+A failover route has an ordered primary and fallback, rather than a weighted split:
+
+```json
+{
+  "small-chat": {
+    "primary": "qwen2.5:1.5b",
+    "fallback": "llama3.2:1b"
+  }
+}
+```
+
+For non-streaming completions, the gateway retries the fallback once when the primary times out, encounters a network error, or returns a `5xx`. It does not mask client-side `4xx` errors. The response has top-level `selected_backend` and `fallback_used` fields; streaming responses convey the same information through `X-Selected-Backend` and `X-Fallback-Used` headers.
 
 ## Benchmark
 

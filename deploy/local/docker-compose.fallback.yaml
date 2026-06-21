@@ -1,0 +1,13 @@
+services:
+  ollama-init:
+    environment:
+      OLLAMA_MODELS: qwen2.5:1.5b,llama3.2:1b
+
+  gateway:
+    environment:
+      OLLAMA_MODELS: qwen2.5:1.5b,llama3.2:1b
+      # The closed loopback port intentionally simulates a primary connection failure.
+      MODEL_TARGETS: >-
+        {"qwen2.5:1.5b":{"url":"http://127.0.0.1:1","input_cost_per_million":0,"output_cost_per_million":0}}
+      MODEL_ROUTES: >-
+        {"small-chat":{"primary":"qwen2.5:1.5b","fallback":"llama3.2:1b"}}
