@@ -6,12 +6,14 @@ from app.gateway.main import (
     BackendHealthStore,
     ModelRoute,
     ModelTarget,
+    NoHealthyBackendError,
     RouteTarget,
     chat_completions_url,
     post_completion_with_fallback,
     request_cost,
     resolve_route,
     select_route_target,
+    select_health_aware_backend,
 )
 
 
@@ -163,3 +165,50 @@ async def test_backend_health_snapshot_uses_probes_and_request_signals() -> None
     assert snapshot[0]["error_rate"] == 0.5
     assert snapshot[0]["fallback_rate"] == 0.5
     assert snapshot[0]["score"] < 100
+
+
+def health_aware_route() -> ModelRoute:
+    return ModelRoute(primary="qwen", fallback="llama", min_health_score=50, unhealthy_action="skip")
+
+
+def health_settings() -> GatewaySettings:
+    return GatewaySettings(
+        model_targets={
+            "qwen": ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0),
+            "llama": ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0),
+        }
+    )
+
+
+@pytest.mark.anyio
+async def test_health_aware_route_keeps_healthy_primary() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        health = BackendHealthStore(health_settings(), client)
+        await health.probe_all()
+        assert await select_health_aware_backend(health_aware_route(), "qwen", "llama", health) == ("qwen", False)
+
+
+@pytest.mark.anyio
+async def test_health_aware_route_skips_low_score_primary() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503 if request.url.host == "primary" else 200, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        health = BackendHealthStore(health_settings(), client)
+        await health.probe_all()
+        assert await select_health_aware_backend(health_aware_route(), "qwen", "llama", health) == ("llama", True)
+
+
+@pytest.mark.anyio
+async def test_health_aware_route_returns_no_backend_when_all_scores_are_low() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        health = BackendHealthStore(health_settings(), client)
+        await health.probe_all()
+        with pytest.raises(NoHealthyBackendError):
+            await select_health_aware_backend(health_aware_route(), "qwen", "llama", health)

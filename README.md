@@ -170,6 +170,23 @@ curl http://localhost:8080/v1/backends/health
 
 The current store is in-memory per gateway replica, which is deliberate for the MVP. A horizontally scaled production gateway must export these signals to Prometheus or aggregate them in a shared telemetry backend before making fleet-wide routing decisions.
 
+## Health-aware routing
+
+Failover routes can prevent an avoidable failure by setting a minimum backend score:
+
+```json
+{
+  "small-chat": {
+    "primary": "qwen2.5:1.5b",
+    "fallback": "llama3.2:1b",
+    "min_health_score": 50,
+    "unhealthy_action": "skip"
+  }
+}
+```
+
+With this policy, a healthy primary remains selected. If its score falls below 50, the gateway selects the healthy fallback before sending inference traffic. If neither backend meets the threshold, it returns `503`. A preemptive reroute returns `fallback_used: true` and `routing_reason: "health_score"`.
+
 ## Benchmark
 
 Run a controlled benchmark against the gateway. Keep the model, GPU class, concurrency, context length, prompt mix, cache state, and sampling parameters in the benchmark record; otherwise latency comparisons are not defensible.

@@ -100,6 +100,8 @@ curl http://localhost:8080/v1/chat/completions \
 
 The response must contain `"selected_backend":"llama3.2:1b"` and `"fallback_used":true`.
 
+This profile also sets `min_health_score: 50`; after the probe loop marks the closed primary port unhealthy, the gateway skips it before attempting a completion. The response includes `"routing_reason":"health_score"`.
+
 ## Routing contract
 
 When `OLLAMA_BASE_URL` is set, the gateway adds `OLLAMA_MODEL` (default: `qwen2.5:1.5b`) as a route to `<OLLAMA_BASE_URL>/v1`. An explicit entry in `MODEL_TARGETS` for the same model name wins, so GitOps configuration can override the local route deterministically.
