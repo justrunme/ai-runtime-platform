@@ -47,6 +47,8 @@ class ModelRoute(BaseModel):
     targets: list[RouteTarget] = Field(default_factory=list)
     primary: str | None = None
     fallback: str | None = None
+    min_health_score: int | None = Field(default=None, ge=0, le=100)
+    unhealthy_action: str = "skip"
 
     @model_validator(mode="after")
     def has_valid_policy(self) -> "ModelRoute":
@@ -62,6 +64,10 @@ class ModelRoute(BaseModel):
             raise ValueError("failover routes require a fallback model")
         if is_failover and self.primary == self.fallback:
             raise ValueError("primary and fallback models must differ")
+        if self.min_health_score is not None and not is_failover:
+            raise ValueError("health-aware routing requires a primary and fallback policy")
+        if self.min_health_score is not None and self.unhealthy_action != "skip":
+            raise ValueError("unsupported unhealthy action")
         return self
 
     def model_names(self) -> list[str]:
@@ -232,6 +238,11 @@ class BackendHealthStore:
                 for health in [self._health[model]]
             ]
 
+    async def meets_score(self, model: str, threshold: int) -> bool:
+        async with self._lock:
+            health = self._health[model]
+            return health.available is not False and health.score() >= threshold
+
 
 async def health_probe_loop(store: BackendHealthStore, interval_seconds: float) -> None:
     while True:
@@ -259,6 +270,26 @@ def resolve_route(route: ModelRoute | None, request_id: str, route_name: str) ->
     if route.primary is not None:
         return route.primary, route.fallback
     return select_route_target(route, request_id, route_name), None
+
+
+class NoHealthyBackendError(Exception):
+    """Raised when a health-aware route has no eligible backend."""
+
+
+async def select_health_aware_backend(
+    route: ModelRoute | None,
+    primary_model: str,
+    fallback_model: str | None,
+    health_store: BackendHealthStore,
+) -> tuple[str, bool]:
+    """Skip an unhealthy primary before issuing an inference request."""
+    if route is None or route.min_health_score is None:
+        return primary_model, False
+    if await health_store.meets_score(primary_model, route.min_health_score):
+        return primary_model, False
+    if fallback_model is not None and await health_store.meets_score(fallback_model, route.min_health_score):
+        return fallback_model, True
+    raise NoHealthyBackendError("no backend meets the route health threshold")
 
 
 async def post_completion_with_fallback(
@@ -349,6 +380,8 @@ async def list_routes(request: Request) -> dict[str, object]:
                 "id": route_name,
                 "object": "model.route",
                 "policy": "failover" if route.primary is not None else "weighted",
+                "min_health_score": route.min_health_score,
+                "unhealthy_action": route.unhealthy_action if route.min_health_score is not None else None,
                 "targets": [target.model_dump() for target in route.targets]
                 if route.primary is None
                 else [{"model": route.primary, "role": "primary"}, {"model": route.fallback, "role": "fallback"}],
@@ -371,6 +404,14 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     route = settings.model_routes.get(requested_model)
     model, fallback_model = resolve_route(route, request_id, requested_model)
+    try:
+        model, health_rerouted = await select_health_aware_backend(
+            route, model, fallback_model, request.app.state.backend_health
+        )
+    except NoHealthyBackendError as error:
+        raise HTTPException(status_code=503, detail="no healthy backend for route") from error
+    if health_rerouted:
+        fallback_model = None
     target = settings.model_targets.get(model)
     if target is None:
         raise HTTPException(status_code=404, detail=f"unknown model or route: {requested_model}")
@@ -422,7 +463,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             for failed_model in failed_models:
                 await request.app.state.backend_health.record_request(failed_model, success=False)
             await request.app.state.backend_health.record_request(
-                model, success=True, fallback_used=fallback_used
+                model, success=True, fallback_used=fallback_used or health_rerouted
             )
         except httpx.HTTPError as error:
             span.record_exception(error)
@@ -430,7 +471,8 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
 
         response = upstream.json()
         response["selected_backend"] = model
-        response["fallback_used"] = fallback_used
+        response["fallback_used"] = fallback_used or health_rerouted
+        response["routing_reason"] = "health_score" if health_rerouted else "fallback" if fallback_used else "primary"
         estimated_cost = request_cost(response.get("usage"), settings.model_targets[model])
         if estimated_cost is not None:
             response["runtime_cost"] = {"currency": "USD", "estimated": estimated_cost}

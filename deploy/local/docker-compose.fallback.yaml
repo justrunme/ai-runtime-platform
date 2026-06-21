@@ -10,4 +10,4 @@ services:
       MODEL_TARGETS: >-
         {"qwen2.5:1.5b":{"url":"http://127.0.0.1:1","input_cost_per_million":0,"output_cost_per_million":0}}
       MODEL_ROUTES: >-
-        {"small-chat":{"primary":"qwen2.5:1.5b","fallback":"llama3.2:1b"}}
+        {"small-chat":{"primary":"qwen2.5:1.5b","fallback":"llama3.2:1b","min_health_score":50,"unhealthy_action":"skip"}}
