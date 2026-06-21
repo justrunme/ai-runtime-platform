@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
@@ -45,9 +46,24 @@ class GatewaySettings(BaseModel):
             }
         }
         raw_targets = os.getenv("MODEL_TARGETS")
+        model_targets = json.loads(raw_targets) if raw_targets else default_targets
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL")
+        if ollama_base_url:
+            ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+            ollama_url = ollama_base_url.rstrip("/")
+            if not ollama_url.endswith("/v1"):
+                ollama_url = f"{ollama_url}/v1"
+            model_targets.setdefault(
+                ollama_model,
+                {
+                    "url": ollama_url,
+                    "input_cost_per_million": float(os.getenv("OLLAMA_INPUT_COST_PER_MILLION", "0")),
+                    "output_cost_per_million": float(os.getenv("OLLAMA_OUTPUT_COST_PER_MILLION", "0")),
+                },
+            )
         return cls.model_validate(
             {
-                "model_targets": json.loads(raw_targets) if raw_targets else default_targets,
+                "model_targets": model_targets,
                 "timeout_seconds": float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "120")),
             }
         )
@@ -64,6 +80,13 @@ def request_cost(usage: dict[str, int] | None, target: ModelTarget) -> float | N
         / 1_000_000,
         8,
     )
+
+
+def chat_completions_url(base_url: str) -> str:
+    """Build a chat-completions endpoint from an OpenAI-compatible base URL."""
+    normalized = base_url.rstrip("/")
+    suffix = "/chat/completions" if normalized.endswith("/v1") else "/v1/chat/completions"
+    return f"{normalized}{suffix}"
 
 
 def configure_tracing() -> None:
@@ -111,7 +134,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     started_at = time.monotonic()
     headers = {"x-request-id": request_id}
-    upstream_url = f"{target.url.rstrip('/')}/v1/chat/completions"
+    upstream_url = chat_completions_url(target.url)
     with trace.get_tracer(__name__).start_as_current_span("gen_ai.chat") as span:
         span.set_attribute("gen_ai.request.model", model)
         span.set_attribute("gen_ai.operation.name", "chat")
@@ -126,7 +149,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                     status_code=upstream.status_code,
                     media_type=upstream.headers.get("content-type", "text/event-stream"),
                     headers=headers,
-                    background=None,
+                    background=BackgroundTask(upstream.aclose),
                 )
             upstream = await request.app.state.client.post(upstream_url, json=payload, headers=headers)
             upstream.raise_for_status()

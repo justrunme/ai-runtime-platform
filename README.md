@@ -19,6 +19,23 @@ flowchart LR
   ArgoCD --> VLLM
 ```
 
+## Demo flow: no GPU required
+
+The local profile proves the public request path on a laptop without compromising the production design:
+
+```mermaid
+flowchart LR
+  Client["curl / OpenAI SDK"] --> Gateway["Gateway :8080"]
+  Gateway --> Ollama["Ollama :11434/v1"]
+  Ollama --> Model["Local CPU model"]
+```
+
+```sh
+docker compose -f deploy/local/docker-compose.yaml up --build
+```
+
+The first launch downloads `qwen2.5:1.5b`, then serves it through the gateway's standard `/v1/chat/completions` endpoint. See the full [local demo guide](deploy/local/README.md), including the response check and model selection. This local profile validates routing and API compatibility only; GPU performance, KEDA, KServe and GitOps remain production-path components.
+
 ## What is implemented
 
 - OpenAI-compatible `POST /v1/chat/completions` gateway with explicit model-to-backend routing.
@@ -101,6 +118,7 @@ Track TTFT, inter-token latency, E2E latency, prompt/output tokens per second, q
 app/gateway/          FastAPI OpenAI-compatible gateway
 charts/vllm-runtime/  Primary vLLM Helm chart
 deploy/               Kustomize base and optional platform integrations
+deploy/local/         CPU-only Ollama + gateway Compose demo
 gitops/argocd/        Argo CD application
 loadtest/             k6 inference benchmark
 docs/                 Architecture and operational decisions
