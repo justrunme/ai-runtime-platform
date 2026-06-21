@@ -144,6 +144,32 @@ A failover route has an ordered primary and fallback, rather than a weighted spl
 
 For non-streaming completions, the gateway retries the fallback once when the primary times out, encounters a network error, or returns a `5xx`. It does not mask client-side `4xx` errors. The response has top-level `selected_backend` and `fallback_used` fields; streaming responses convey the same information through `X-Selected-Backend` and `X-Fallback-Used` headers.
 
+## Backend health scoring
+
+Each gateway replica probes every configured backend on `BACKEND_HEALTH_INTERVAL_SECONDS` (15 seconds by default). It combines probe availability and latency with request-path error and fallback rates into a `0–100` score:
+
+```sh
+curl http://localhost:8080/v1/backends/health
+```
+
+```json
+{
+  "backends": [
+    {
+      "name": "qwen-local",
+      "model": "qwen2.5:1.5b",
+      "status": "healthy",
+      "score": 96,
+      "latency_ms": 420,
+      "error_rate": 0.01,
+      "fallback_rate": 0.0
+    }
+  ]
+}
+```
+
+The current store is in-memory per gateway replica, which is deliberate for the MVP. A horizontally scaled production gateway must export these signals to Prometheus or aggregate them in a shared telemetry backend before making fleet-wide routing decisions.
+
 ## Benchmark
 
 Run a controlled benchmark against the gateway. Keep the model, GPU class, concurrency, context length, prompt mix, cache state, and sampling parameters in the benchmark record; otherwise latency comparisons are not defensible.

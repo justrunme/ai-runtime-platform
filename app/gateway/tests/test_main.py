@@ -3,6 +3,7 @@ import httpx
 
 from app.gateway.main import (
     GatewaySettings,
+    BackendHealthStore,
     ModelRoute,
     ModelTarget,
     RouteTarget,
@@ -89,10 +90,11 @@ async def test_healthy_primary_does_not_use_fallback() -> None:
     primary = ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0)
     fallback = ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0)
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        _, selected, fallback_used = await post_completion_with_fallback(
+        _, selected, fallback_used, failed_models = await post_completion_with_fallback(
             client, {"messages": []}, {}, "qwen", primary, "llama", fallback
         )
     assert (selected, fallback_used) == ("qwen", False)
+    assert failed_models == []
     assert requests == ["http://primary/v1/chat/completions"]
 
 
@@ -109,10 +111,11 @@ async def test_timeout_retries_fallback_model() -> None:
     primary = ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0)
     fallback = ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0)
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        _, selected, fallback_used = await post_completion_with_fallback(
+        _, selected, fallback_used, failed_models = await post_completion_with_fallback(
             client, {"messages": []}, {}, "qwen", primary, "llama", fallback
         )
     assert (selected, fallback_used) == ("llama", True)
+    assert failed_models == ["qwen"]
     assert requests == ["primary", "fallback"]
 
 
@@ -126,7 +129,37 @@ async def test_server_error_retries_fallback_model() -> None:
     primary = ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0)
     fallback = ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0)
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        _, selected, fallback_used = await post_completion_with_fallback(
+        _, selected, fallback_used, failed_models = await post_completion_with_fallback(
             client, {"messages": []}, {}, "qwen", primary, "llama", fallback
         )
     assert (selected, fallback_used) == ("llama", True)
+    assert failed_models == ["qwen"]
+
+
+@pytest.mark.anyio
+async def test_backend_health_snapshot_uses_probes_and_request_signals() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request)
+
+    settings = GatewaySettings(
+        model_targets={
+            "qwen2.5:1.5b": ModelTarget(
+                url="http://primary/v1",
+                backend_name="qwen-local",
+                input_cost_per_million=0,
+                output_cost_per_million=0,
+            )
+        }
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        health = BackendHealthStore(settings, client)
+        await health.probe_all()
+        await health.record_request("qwen2.5:1.5b", success=True)
+        await health.record_request("qwen2.5:1.5b", success=False, fallback_used=True)
+        snapshot = await health.snapshot()
+
+    assert snapshot[0]["name"] == "qwen-local"
+    assert snapshot[0]["status"] == "healthy"
+    assert snapshot[0]["error_rate"] == 0.5
+    assert snapshot[0]["fallback_rate"] == 0.5
+    assert snapshot[0]["score"] < 100

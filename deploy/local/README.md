@@ -37,6 +37,12 @@ Expected path:
 curl / OpenAI SDK -> gateway:8080 -> Ollama:11434/v1 -> local CPU model
 ```
 
+After the first probe interval, inspect the backend health score:
+
+```sh
+curl http://localhost:8080/v1/backends/health
+```
+
 The response includes the original OpenAI-compatible body. `runtime_cost.estimated` is `0` by default for this local profile; set `OLLAMA_INPUT_COST_PER_MILLION` and `OLLAMA_OUTPUT_COST_PER_MILLION` only when demonstrating a hypothetical attribution rate.
 
 ## Change the model
