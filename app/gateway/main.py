@@ -41,6 +41,29 @@ class RouteTarget(BaseModel):
     weight: int = Field(gt=0)
 
 
+class RoutingWeights(BaseModel):
+    health: float = Field(default=0.5, ge=0, le=1)
+    latency: float = Field(default=0.3, ge=0, le=1)
+    cost: float = Field(default=0.2, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def totals_one(self) -> "RoutingWeights":
+        if abs(self.health + self.latency + self.cost - 1) > 0.0001:
+            raise ValueError("routing weights must total 1")
+        return self
+
+
+class RoutingPolicy(BaseModel):
+    strategy: str = "balanced"
+    weights: RoutingWeights = Field(default_factory=RoutingWeights)
+
+    @model_validator(mode="after")
+    def uses_supported_strategy(self) -> "RoutingPolicy":
+        if self.strategy != "balanced":
+            raise ValueError("unsupported routing strategy")
+        return self
+
+
 class ModelRoute(BaseModel):
     """Canary or failover policy for a public model alias."""
 
@@ -49,6 +72,7 @@ class ModelRoute(BaseModel):
     fallback: str | None = None
     min_health_score: int | None = Field(default=None, ge=0, le=100)
     unhealthy_action: str = "skip"
+    routing_policy: RoutingPolicy | None = None
 
     @model_validator(mode="after")
     def has_valid_policy(self) -> "ModelRoute":
@@ -68,6 +92,8 @@ class ModelRoute(BaseModel):
             raise ValueError("health-aware routing requires a primary and fallback policy")
         if self.min_health_score is not None and self.unhealthy_action != "skip":
             raise ValueError("unsupported unhealthy action")
+        if self.routing_policy is not None and not is_failover:
+            raise ValueError("cost-aware routing requires a primary and fallback policy")
         return self
 
     def model_names(self) -> list[str]:
@@ -243,6 +269,11 @@ class BackendHealthStore:
             health = self._health[model]
             return health.available is not False and health.score() >= threshold
 
+    async def routing_signal(self, model: str) -> tuple[int, float | None, bool | None]:
+        async with self._lock:
+            health = self._health[model]
+            return health.score(), health.latency_ms, health.available
+
 
 async def health_probe_loop(store: BackendHealthStore, interval_seconds: float) -> None:
     while True:
@@ -290,6 +321,49 @@ async def select_health_aware_backend(
     if fallback_model is not None and await health_store.meets_score(fallback_model, route.min_health_score):
         return fallback_model, True
     raise NoHealthyBackendError("no backend meets the route health threshold")
+
+
+async def select_cost_aware_backend(
+    route: ModelRoute | None,
+    primary_model: str,
+    fallback_model: str | None,
+    health_store: BackendHealthStore,
+    model_targets: dict[str, ModelTarget],
+) -> tuple[str, bool]:
+    """Choose the best healthy failover target using health, latency, and unit cost."""
+    if route is None or route.routing_policy is None or fallback_model is None:
+        return primary_model, False
+    candidates = [primary_model, fallback_model]
+    signals = {model: await health_store.routing_signal(model) for model in candidates}
+    threshold = route.min_health_score or 0
+    eligible = [
+        model
+        for model, (health_score, _, available) in signals.items()
+        if available is not False and health_score >= threshold
+    ]
+    if not eligible:
+        raise NoHealthyBackendError("no backend meets the route health threshold")
+    if len(eligible) == 1:
+        selected = eligible[0]
+        return selected, selected != primary_model
+
+    costs = {
+        model: model_targets[model].input_cost_per_million + model_targets[model].output_cost_per_million
+        for model in eligible
+    }
+    latencies = {model: signals[model][1] or float("inf") for model in eligible}
+    min_cost = min(costs.values())
+    min_latency = min(latencies.values())
+    weights = route.routing_policy.weights
+
+    def score(model: str) -> float:
+        health_score, latency_ms, _ = signals[model]
+        latency_component = min_latency / (latency_ms or float("inf")) if min_latency != float("inf") else 1
+        cost_component = min_cost / costs[model] if costs[model] else 1
+        return weights.health * health_score / 100 + weights.latency * latency_component + weights.cost * cost_component
+
+    selected = max(eligible, key=lambda model: (score(model), model == primary_model))
+    return selected, selected != primary_model
 
 
 async def post_completion_with_fallback(
@@ -382,6 +456,7 @@ async def list_routes(request: Request) -> dict[str, object]:
                 "policy": "failover" if route.primary is not None else "weighted",
                 "min_health_score": route.min_health_score,
                 "unhealthy_action": route.unhealthy_action if route.min_health_score is not None else None,
+                "routing_policy": route.routing_policy.model_dump() if route.routing_policy else None,
                 "targets": [target.model_dump() for target in route.targets]
                 if route.primary is None
                 else [{"model": route.primary, "role": "primary"}, {"model": route.fallback, "role": "fallback"}],
@@ -405,12 +480,19 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     route = settings.model_routes.get(requested_model)
     model, fallback_model = resolve_route(route, request_id, requested_model)
     try:
-        model, health_rerouted = await select_health_aware_backend(
-            route, model, fallback_model, request.app.state.backend_health
-        )
+        if route and route.routing_policy:
+            model, cost_rerouted = await select_cost_aware_backend(
+                route, model, fallback_model, request.app.state.backend_health, settings.model_targets
+            )
+            health_rerouted = False
+        else:
+            model, health_rerouted = await select_health_aware_backend(
+                route, model, fallback_model, request.app.state.backend_health
+            )
+            cost_rerouted = False
     except NoHealthyBackendError as error:
         raise HTTPException(status_code=503, detail="no healthy backend for route") from error
-    if health_rerouted:
+    if health_rerouted or cost_rerouted:
         fallback_model = None
     target = settings.model_targets.get(model)
     if target is None:
@@ -463,7 +545,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             for failed_model in failed_models:
                 await request.app.state.backend_health.record_request(failed_model, success=False)
             await request.app.state.backend_health.record_request(
-                model, success=True, fallback_used=fallback_used or health_rerouted
+                model, success=True, fallback_used=fallback_used or health_rerouted or cost_rerouted
             )
         except httpx.HTTPError as error:
             span.record_exception(error)
@@ -471,10 +553,21 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
 
         response = upstream.json()
         response["selected_backend"] = model
-        response["fallback_used"] = fallback_used or health_rerouted
-        response["routing_reason"] = "health_score" if health_rerouted else "fallback" if fallback_used else "primary"
+        response["fallback_used"] = fallback_used or health_rerouted or cost_rerouted
+        response["routing_reason"] = (
+            "cost_aware"
+            if cost_rerouted
+            else "health_score"
+            if health_rerouted
+            else "fallback"
+            if fallback_used
+            else "primary"
+        )
+        health_score, _, _ = await request.app.state.backend_health.routing_signal(model)
+        response["health_score"] = health_score
         estimated_cost = request_cost(response.get("usage"), settings.model_targets[model])
         if estimated_cost is not None:
+            response["estimated_cost"] = estimated_cost
             response["runtime_cost"] = {"currency": "USD", "estimated": estimated_cost}
             span.set_attribute("gen_ai.usage.cost_usd", estimated_cost)
         span.set_attribute("gen_ai.server.time_to_last_byte_ms", round((time.monotonic() - started_at) * 1000))

@@ -187,6 +187,21 @@ Failover routes can prevent an avoidable failure by setting a minimum backend sc
 
 With this policy, a healthy primary remains selected. If its score falls below 50, the gateway selects the healthy fallback before sending inference traffic. If neither backend meets the threshold, it returns `503`. A preemptive reroute returns `fallback_used: true` and `routing_reason: "health_score"`.
 
+## Cost-aware routing
+
+When both failover backends are healthy, a balanced policy ranks them by health, observed latency, and configured unit token cost:
+
+```json
+{
+  "routing_policy": {
+    "strategy": "balanced",
+    "weights": {"health": 0.5, "latency": 0.3, "cost": 0.2}
+  }
+}
+```
+
+The gateway picks the highest weighted score and returns `routing_reason: "cost_aware"`, `selected_backend`, `health_score`, and `estimated_cost`. This is an in-memory, per-replica decision for the MVP; use shared Prometheus/telemetry signals before treating the policy as globally consistent at scale.
+
 ## Benchmark
 
 Run a controlled benchmark against the gateway. Keep the model, GPU class, concurrency, context length, prompt mix, cache state, and sampling parameters in the benchmark record; otherwise latency comparisons are not defensible.
