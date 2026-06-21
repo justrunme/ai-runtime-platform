@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-runtime-inference-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  ai-runtime-inference.json: |
+    {
+      "title": "AI Runtime / vLLM Inference",
+      "schemaVersion": 39,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Request queue depth",
+          "targets": [{"expr": "sum(vllm:num_requests_waiting{namespace=\\\"ai-runtime\\\"})", "legendFormat": "waiting"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Generation tokens per second",
+          "targets": [{"expr": "sum(rate(vllm:generation_tokens_total{namespace=\\\"ai-runtime\\\"}[1m]))", "legendFormat": "tokens/s"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "KV cache utilization",
+          "targets": [{"expr": "max(vllm:kv_cache_usage_perc{namespace=\\\"ai-runtime\\\"})", "legendFormat": "usage"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "P95 time to first token",
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{namespace=\\\"ai-runtime\\\"}[5m])))", "legendFormat": "p95 TTFT"}]
+        }
+      ]
+    }

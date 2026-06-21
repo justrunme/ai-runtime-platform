@@ -1,0 +1,36 @@
+# Requires KServe >= 0.18 installed in Standard mode.
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen-vllm
+  namespace: ai-runtime
+  annotations:
+    serving.kserve.io/deploymentMode: Standard
+spec:
+  predictor:
+    minReplicas: 1
+    containers:
+      - name: kserve-container
+        image: vllm/vllm-openai:v0.13.0
+        args:
+          - --model=Qwen/Qwen2.5-7B-Instruct
+          - --served-model-name=qwen2.5-7b-instruct
+          - --gpu-memory-utilization=0.90
+        ports:
+          - containerPort: 8000
+            protocol: TCP
+        resources:
+          requests:
+            cpu: "4"
+            memory: 24Gi
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "8"
+            memory: 32Gi
+            nvidia.com/gpu: "1"
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule

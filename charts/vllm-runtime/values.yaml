@@ -1,0 +1,34 @@
+replicaCount: 1
+
+image:
+  repository: vllm/vllm-openai
+  tag: v0.13.0
+  pullPolicy: IfNotPresent
+
+model:
+  name: Qwen/Qwen2.5-7B-Instruct
+  servedName: qwen2.5-7b-instruct
+  gpuMemoryUtilization: "0.90"
+  maxModelLen: "8192"
+
+resources:
+  requests:
+    cpu: "4"
+    memory: 24Gi
+    nvidia.com/gpu: "1"
+  limits:
+    cpu: "8"
+    memory: 32Gi
+    nvidia.com/gpu: "1"
+
+nodeSelector:
+  nvidia.com/gpu.present: "true"
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+serviceMonitor:
+  enabled: true
+  interval: 15s

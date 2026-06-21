@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-runtime-platform"
+version = "0.1.0"
+description = "Kubernetes-native private LLM inference runtime"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "httpx>=0.27,<1.0",
+  "opentelemetry-api>=1.28,<2.0",
+  "opentelemetry-instrumentation-fastapi>=0.49b0",
+  "opentelemetry-sdk>=1.28,<2.0",
+  "pydantic>=2.9,<3.0",
+  "uvicorn[standard]>=0.30,<1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9.0", "ruff>=0.8,<1.0"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["app/gateway/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
