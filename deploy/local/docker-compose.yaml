@@ -23,9 +23,9 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
+      OLLAMA_MODELS: ${OLLAMA_MODELS:-qwen2.5:1.5b}
     entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull $$OLLAMA_MODEL"]
+    command: ["for model in $$(echo $$OLLAMA_MODELS | tr ',' ' '); do ollama pull $$model; done"]
     restart: "no"
 
   gateway:
@@ -37,7 +37,9 @@ services:
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
+      OLLAMA_MODELS: ${OLLAMA_MODELS:-qwen2.5:1.5b}
       MODEL_TARGETS: "{}"
+      MODEL_ROUTES: ${MODEL_ROUTES:-{}}
     ports:
       - "8080:8080"
     read_only: true
