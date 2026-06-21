@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import os
-import hashlib
 import time
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -28,6 +30,8 @@ class ModelTarget(BaseModel):
     url: str
     input_cost_per_million: float = Field(ge=0)
     output_cost_per_million: float = Field(ge=0)
+    backend_name: str | None = None
+    health_path: str = "/health"
 
 
 class RouteTarget(BaseModel):
@@ -73,6 +77,7 @@ class GatewaySettings(BaseModel):
     model_targets: dict[str, ModelTarget]
     model_routes: dict[str, ModelRoute] = Field(default_factory=dict)
     timeout_seconds: float = Field(default=120.0, gt=0)
+    health_interval_seconds: float = Field(default=15.0, gt=0)
 
     @model_validator(mode="after")
     def route_targets_exist(self) -> "GatewaySettings":
@@ -110,6 +115,8 @@ class GatewaySettings(BaseModel):
                         "url": ollama_url,
                         "input_cost_per_million": float(os.getenv("OLLAMA_INPUT_COST_PER_MILLION", "0")),
                         "output_cost_per_million": float(os.getenv("OLLAMA_OUTPUT_COST_PER_MILLION", "0")),
+                        "backend_name": f"ollama-{ollama_model}",
+                        "health_path": "/",
                     },
                 )
         raw_routes = os.getenv("MODEL_ROUTES")
@@ -118,6 +125,7 @@ class GatewaySettings(BaseModel):
                 "model_targets": model_targets,
                 "model_routes": json.loads(raw_routes) if raw_routes else {},
                 "timeout_seconds": float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "120")),
+                "health_interval_seconds": float(os.getenv("BACKEND_HEALTH_INTERVAL_SECONDS", "15")),
             }
         )
 
@@ -140,6 +148,95 @@ def chat_completions_url(base_url: str) -> str:
     normalized = base_url.rstrip("/")
     suffix = "/chat/completions" if normalized.endswith("/v1") else "/v1/chat/completions"
     return f"{normalized}{suffix}"
+
+
+def backend_health_url(target: ModelTarget) -> str:
+    """Build the health endpoint without assuming the OpenAI API base path."""
+    base_url = target.url.rstrip("/")
+    if base_url.endswith("/v1"):
+        base_url = base_url.removesuffix("/v1")
+    return f"{base_url}{target.health_path}"
+
+
+@dataclass
+class BackendHealth:
+    available: bool | None = None
+    latency_ms: float | None = None
+    request_count: int = 0
+    error_count: int = 0
+    fallback_count: int = 0
+
+    def score(self) -> int:
+        if self.available is False:
+            return 0
+        latency_penalty = min((self.latency_ms or 0) / 20, 30)
+        error_penalty = self.error_rate * 50
+        fallback_penalty = self.fallback_rate * 20
+        return round(max(0, 100 - latency_penalty - error_penalty - fallback_penalty))
+
+    @property
+    def error_rate(self) -> float:
+        return self.error_count / self.request_count if self.request_count else 0.0
+
+    @property
+    def fallback_rate(self) -> float:
+        return self.fallback_count / self.request_count if self.request_count else 0.0
+
+
+class BackendHealthStore:
+    """In-memory health signals for one gateway replica."""
+
+    def __init__(self, settings: GatewaySettings, client: httpx.AsyncClient) -> None:
+        self._settings = settings
+        self._client = client
+        self._health = {model: BackendHealth() for model in settings.model_targets}
+        self._lock = asyncio.Lock()
+
+    async def probe_all(self) -> None:
+        await asyncio.gather(
+            *(self.probe(model, target) for model, target in self._settings.model_targets.items())
+        )
+
+    async def probe(self, model: str, target: ModelTarget) -> None:
+        started_at = time.monotonic()
+        try:
+            response = await self._client.get(backend_health_url(target), timeout=min(5, self._settings.timeout_seconds))
+            available = response.is_success
+        except httpx.RequestError:
+            available = False
+        latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+        async with self._lock:
+            self._health[model].available = available
+            self._health[model].latency_ms = latency_ms
+
+    async def record_request(self, model: str, *, success: bool, fallback_used: bool = False) -> None:
+        async with self._lock:
+            health = self._health[model]
+            health.request_count += 1
+            health.error_count += int(not success)
+            health.fallback_count += int(fallback_used)
+
+    async def snapshot(self) -> list[dict[str, object]]:
+        async with self._lock:
+            return [
+                {
+                    "name": target.backend_name or model,
+                    "model": model,
+                    "status": "healthy" if health.available else "unhealthy" if health.available is False else "unknown",
+                    "score": health.score(),
+                    "latency_ms": health.latency_ms,
+                    "error_rate": round(health.error_rate, 4),
+                    "fallback_rate": round(health.fallback_rate, 4),
+                }
+                for model, target in self._settings.model_targets.items()
+                for health in [self._health[model]]
+            ]
+
+
+async def health_probe_loop(store: BackendHealthStore, interval_seconds: float) -> None:
+    while True:
+        await store.probe_all()
+        await asyncio.sleep(interval_seconds)
 
 
 def select_route_target(route: ModelRoute, request_id: str, route_name: str) -> str:
@@ -172,25 +269,28 @@ async def post_completion_with_fallback(
     primary_target: ModelTarget,
     fallback_model: str | None = None,
     fallback_target: ModelTarget | None = None,
-) -> tuple[httpx.Response, str, bool]:
+) -> tuple[httpx.Response, str, bool, list[str]]:
     """Call primary then retry one retryable failure against the fallback target."""
     attempts = [(primary_model, primary_target, False)]
     if fallback_model is not None and fallback_target is not None:
         attempts.append((fallback_model, fallback_target, True))
 
+    failed_models: list[str] = []
     for index, (model, target, fallback_used) in enumerate(attempts):
         try:
             response = await client.post(
                 chat_completions_url(target.url), json={**payload, "model": model}, headers=headers
             )
             response.raise_for_status()
-            return response, model, fallback_used
+            return response, model, fallback_used, failed_models
         except httpx.HTTPStatusError as error:
             if error.response.status_code < 500 or index == len(attempts) - 1:
                 raise
+            failed_models.append(model)
         except httpx.RequestError:
             if index == len(attempts) - 1:
                 raise
+            failed_models.append(model)
 
     raise RuntimeError("completion routing had no configured attempt")
 
@@ -206,8 +306,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = GatewaySettings.from_environment()
     app.state.settings = settings
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
-    yield
-    await app.state.client.aclose()
+    app.state.backend_health = BackendHealthStore(settings, app.state.client)
+    health_task = asyncio.create_task(health_probe_loop(app.state.backend_health, settings.health_interval_seconds))
+    try:
+        yield
+    finally:
+        health_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await health_task
+        await app.state.client.aclose()
 
 
 configure_tracing()
@@ -249,6 +356,11 @@ async def list_routes(request: Request) -> dict[str, object]:
             for route_name, route in settings.model_routes.items()
         ]
     }
+
+
+@app.get("/v1/backends/health")
+async def backend_health(request: Request) -> dict[str, object]:
+    return {"backends": await request.app.state.backend_health.snapshot()}
 
 
 @app.post("/v1/chat/completions", response_model=None)
@@ -298,7 +410,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                     headers=headers,
                     background=BackgroundTask(upstream.aclose),
                 )
-            upstream, model, fallback_used = await post_completion_with_fallback(
+            upstream, model, fallback_used, failed_models = await post_completion_with_fallback(
                 request.app.state.client,
                 payload,
                 headers,
@@ -306,6 +418,11 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 target,
                 fallback_model,
                 fallback_target,
+            )
+            for failed_model in failed_models:
+                await request.app.state.backend_health.record_request(failed_model, success=False)
+            await request.app.state.backend_health.record_request(
+                model, success=True, fallback_used=fallback_used
             )
         except httpx.HTTPError as error:
             span.record_exception(error)
