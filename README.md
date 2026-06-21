@@ -4,6 +4,14 @@
 
 This repository demonstrates the runtime layer of an AI platform: receiving an OpenAI-compatible request, routing it to a GPU model server, scaling from inference pressure, and emitting operations-grade telemetry. It deliberately does not present a model governance control plane.
 
+## Architecture at a glance
+
+| Local demo | Production runtime | Router intelligence |
+| --- | --- | --- |
+| Ollama + Docker Compose + CPU | vLLM / KServe / GPU / KEDA / Argo CD | Canary / fallback / health / cost |
+
+Start with the [30-second demo flow](docs/demo-flow.md) or inspect the [full architecture](docs/architecture.md). The decision loop combines route policy with health, latency, and configured cost to select a backend and makes that decision visible in every completion response.
+
 ```mermaid
 flowchart LR
   Client["Client / OpenAI SDK"] --> Gateway["AI Runtime Gateway"]
