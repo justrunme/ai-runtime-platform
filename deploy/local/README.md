@@ -53,6 +53,30 @@ The same exact model name must be sent in the `model` field. To remove the downl
 docker compose -f deploy/local/docker-compose.yaml down -v
 ```
 
+## Run the local canary profile
+
+The canary overlay downloads `qwen2.5:1.5b` and `llama3.2:1b`, then adds the public `small-chat` route: 90% primary and 10% canary.
+
+```sh
+docker compose \
+  -f deploy/local/docker-compose.yaml \
+  -f deploy/local/docker-compose.canary.yaml \
+  up --build --force-recreate
+```
+
+Inspect the configured split and send a request through the alias:
+
+```sh
+curl http://localhost:8080/v1/routes
+
+curl http://localhost:8080/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H 'x-request-id: canary-demo-001' \
+  -d '{"model":"small-chat","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+The same `X-Request-ID` always resolves to the same model for this route. This makes retries stable; use distinct request IDs to observe the weighted distribution.
+
 ## Routing contract
 
 When `OLLAMA_BASE_URL` is set, the gateway adds `OLLAMA_MODEL` (default: `qwen2.5:1.5b`) as a route to `<OLLAMA_BASE_URL>/v1`. An explicit entry in `MODEL_TARGETS` for the same model name wins, so GitOps configuration can override the local route deterministically.

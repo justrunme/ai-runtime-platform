@@ -1,0 +1,10 @@
+services:
+  ollama-init:
+    environment:
+      OLLAMA_MODELS: qwen2.5:1.5b,llama3.2:1b
+
+  gateway:
+    environment:
+      OLLAMA_MODELS: qwen2.5:1.5b,llama3.2:1b
+      MODEL_ROUTES: >-
+        {"small-chat":{"targets":[{"model":"qwen2.5:1.5b","weight":90},{"model":"llama3.2:1b","weight":10}]}}

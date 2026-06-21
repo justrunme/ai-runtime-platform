@@ -101,6 +101,34 @@ The gateway accepts the standard OpenAI chat-completions shape and reads model t
 
 `runtime_cost.estimated` is an attribution estimate based on the returned `usage` block. It is not a cloud billing source of truth.
 
+## Canary model rollout
+
+The gateway supports a virtual model alias that resolves to weighted backends. This lets clients retain one model identifier while a new model receives a controlled fraction of traffic.
+
+```json
+{
+  "small-chat": {
+    "targets": [
+      {"model": "qwen2.5:1.5b", "weight": 90},
+      {"model": "llama3.2:1b", "weight": 10}
+    ]
+  }
+}
+```
+
+Set that JSON in `MODEL_ROUTES`, with every referenced model declared in `MODEL_TARGETS` (or supplied by `OLLAMA_MODELS` locally). The gateway hashes `X-Request-ID` with the route name, so retries with the same ID remain on the same backend. It forwards the selected model name upstream and records both requested and selected models in tracing.
+
+```sh
+curl http://localhost:8080/v1/routes
+
+curl http://localhost:8080/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H 'x-request-id: canary-demo-001' \
+  -d '{"model":"small-chat","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+Route percentages control request allocation, not quality or safety. Promote a canary only after evaluating comparable latency, error, token-throughput, cost, and task-quality signals.
+
 ## Benchmark
 
 Run a controlled benchmark against the gateway. Keep the model, GPU class, concurrency, context length, prompt mix, cache state, and sampling parameters in the benchmark record; otherwise latency comparisons are not defensible.
@@ -136,7 +164,7 @@ docs/                 Architecture and operational decisions
 1. Add Envoy AI Gateway policies, per-tenant API keys, rate limits, and JWT/OIDC authentication.
 2. Add Ray Serve LLM as a multi-model/pipeline deployment profile.
 3. Export a Grafana dashboard and SLO recording rules for TTFT, TPOT, queue depth, and error budget.
-4. Introduce model revisions, canary analysis gates, and rollback based on live latency/error signals.
+4. Add canary analysis gates and rollback based on live latency/error signals.
 5. Add a reproducible benchmark report for a named GPU/model/version profile.
 
 ## Security note

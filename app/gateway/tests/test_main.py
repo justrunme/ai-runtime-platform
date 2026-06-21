@@ -1,4 +1,14 @@
-from app.gateway.main import GatewaySettings, ModelTarget, chat_completions_url, request_cost
+import pytest
+
+from app.gateway.main import (
+    GatewaySettings,
+    ModelRoute,
+    ModelTarget,
+    RouteTarget,
+    chat_completions_url,
+    request_cost,
+    select_route_target,
+)
 
 
 def test_request_cost_uses_openai_usage_fields() -> None:
@@ -36,3 +46,25 @@ def test_ollama_base_url_is_not_given_a_second_v1_suffix(monkeypatch) -> None:
 def test_chat_completions_url_handles_origin_and_v1_base() -> None:
     assert chat_completions_url("http://vllm:8000") == "http://vllm:8000/v1/chat/completions"
     assert chat_completions_url("http://ollama:11434/v1/") == "http://ollama:11434/v1/chat/completions"
+
+
+def test_canary_route_selection_is_stable_for_a_request() -> None:
+    route = ModelRoute(
+        targets=[RouteTarget(model="qwen2.5:1.5b", weight=90), RouteTarget(model="llama3.2:1b", weight=10)]
+    )
+    assert select_route_target(route, "request-42", "small-chat") == select_route_target(
+        route, "request-42", "small-chat"
+    )
+
+
+def test_route_rejects_weights_that_do_not_total_100() -> None:
+    with pytest.raises(ValueError, match="total 100"):
+        ModelRoute(targets=[RouteTarget(model="qwen2.5:1.5b", weight=99)])
+
+
+def test_settings_reject_route_model_that_has_no_target(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "MODEL_ROUTES", '{"small-chat":{"targets":[{"model":"missing","weight":100}]}}'
+    )
+    with pytest.raises(ValueError, match="unknown models"):
+        GatewaySettings.from_environment()
