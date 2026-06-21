@@ -38,15 +38,32 @@ class RouteTarget(BaseModel):
 
 
 class ModelRoute(BaseModel):
-    """Traffic split for a public model alias."""
+    """Canary or failover policy for a public model alias."""
 
-    targets: list[RouteTarget] = Field(min_length=1)
+    targets: list[RouteTarget] = Field(default_factory=list)
+    primary: str | None = None
+    fallback: str | None = None
 
     @model_validator(mode="after")
-    def has_full_traffic_split(self) -> "ModelRoute":
-        if sum(target.weight for target in self.targets) != 100:
+    def has_valid_policy(self) -> "ModelRoute":
+        is_canary = bool(self.targets)
+        is_failover = self.primary is not None
+        if is_canary == is_failover:
+            raise ValueError("route must define either weighted targets or primary and fallback models")
+        if is_canary and sum(target.weight for target in self.targets) != 100:
             raise ValueError("route target weights must total 100")
+        if is_canary and self.fallback is not None:
+            raise ValueError("weighted routes cannot define a fallback model")
+        if is_failover and self.fallback is None:
+            raise ValueError("failover routes require a fallback model")
+        if is_failover and self.primary == self.fallback:
+            raise ValueError("primary and fallback models must differ")
         return self
+
+    def model_names(self) -> list[str]:
+        if self.primary is not None:
+            return [self.primary, self.fallback]  # type: ignore[list-item]
+        return [target.model for target in self.targets]
 
 
 class GatewaySettings(BaseModel):
@@ -60,10 +77,10 @@ class GatewaySettings(BaseModel):
     @model_validator(mode="after")
     def route_targets_exist(self) -> "GatewaySettings":
         missing = {
-            target.model
+            model
             for route in self.model_routes.values()
-            for target in route.targets
-            if target.model not in self.model_targets
+            for model in route.model_names()
+            if model not in self.model_targets
         }
         if missing:
             raise ValueError(f"route references unknown models: {', '.join(sorted(missing))}")
@@ -127,6 +144,8 @@ def chat_completions_url(base_url: str) -> str:
 
 def select_route_target(route: ModelRoute, request_id: str, route_name: str) -> str:
     """Select a stable weighted target for a route and request identifier."""
+    if not route.targets:
+        raise ValueError("cannot select a weighted target from a failover route")
     bucket = int(hashlib.sha256(f"{route_name}:{request_id}".encode()).hexdigest(), 16) % 100
     upper_bound = 0
     for target in route.targets:
@@ -134,6 +153,46 @@ def select_route_target(route: ModelRoute, request_id: str, route_name: str) -> 
         if bucket < upper_bound:
             return target.model
     raise RuntimeError("validated route did not select a target")
+
+
+def resolve_route(route: ModelRoute | None, request_id: str, route_name: str) -> tuple[str, str | None]:
+    """Resolve a public route to primary and optional fallback model names."""
+    if route is None:
+        return route_name, None
+    if route.primary is not None:
+        return route.primary, route.fallback
+    return select_route_target(route, request_id, route_name), None
+
+
+async def post_completion_with_fallback(
+    client: httpx.AsyncClient,
+    payload: dict[str, object],
+    headers: dict[str, str],
+    primary_model: str,
+    primary_target: ModelTarget,
+    fallback_model: str | None = None,
+    fallback_target: ModelTarget | None = None,
+) -> tuple[httpx.Response, str, bool]:
+    """Call primary then retry one retryable failure against the fallback target."""
+    attempts = [(primary_model, primary_target, False)]
+    if fallback_model is not None and fallback_target is not None:
+        attempts.append((fallback_model, fallback_target, True))
+
+    for index, (model, target, fallback_used) in enumerate(attempts):
+        try:
+            response = await client.post(
+                chat_completions_url(target.url), json={**payload, "model": model}, headers=headers
+            )
+            response.raise_for_status()
+            return response, model, fallback_used
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code < 500 or index == len(attempts) - 1:
+                raise
+        except httpx.RequestError:
+            if index == len(attempts) - 1:
+                raise
+
+    raise RuntimeError("completion routing had no configured attempt")
 
 
 def configure_tracing() -> None:
@@ -182,7 +241,10 @@ async def list_routes(request: Request) -> dict[str, object]:
             {
                 "id": route_name,
                 "object": "model.route",
-                "targets": [target.model_dump() for target in route.targets],
+                "policy": "failover" if route.primary is not None else "weighted",
+                "targets": [target.model_dump() for target in route.targets]
+                if route.primary is None
+                else [{"model": route.primary, "role": "primary"}, {"model": route.fallback, "role": "fallback"}],
             }
             for route_name, route in settings.model_routes.items()
         ]
@@ -196,27 +258,39 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     settings: GatewaySettings = request.app.state.settings
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     route = settings.model_routes.get(requested_model)
-    model = select_route_target(route, request_id, requested_model) if route else requested_model
+    model, fallback_model = resolve_route(route, request_id, requested_model)
     target = settings.model_targets.get(model)
     if target is None:
         raise HTTPException(status_code=404, detail=f"unknown model or route: {requested_model}")
 
     started_at = time.monotonic()
     headers = {"x-request-id": request_id}
-    upstream_url = chat_completions_url(target.url)
-    upstream_payload = {**payload, "model": model}
+    fallback_target = settings.model_targets.get(fallback_model) if fallback_model else None
     with trace.get_tracer(__name__).start_as_current_span("gen_ai.chat") as span:
         span.set_attribute("gen_ai.request.model", requested_model)
-        span.set_attribute("gen_ai.response.model", model)
         if route:
             span.set_attribute("ai.runtime.route", requested_model)
         span.set_attribute("gen_ai.operation.name", "chat")
         try:
             if payload.get("stream"):
+                upstream_url = chat_completions_url(target.url)
                 upstream_request = request.app.state.client.build_request(
-                    "POST", upstream_url, json=upstream_payload, headers=headers
+                    "POST", upstream_url, json={**payload, "model": model}, headers=headers
                 )
                 upstream = await request.app.state.client.send(upstream_request, stream=True)
+                if upstream.status_code >= 500 and fallback_target is not None and fallback_model is not None:
+                    await upstream.aclose()
+                    model = fallback_model
+                    upstream_request = request.app.state.client.build_request(
+                        "POST",
+                        chat_completions_url(fallback_target.url),
+                        json={**payload, "model": model},
+                        headers=headers,
+                    )
+                    upstream = await request.app.state.client.send(upstream_request, stream=True)
+                    headers["x-fallback-used"] = "true"
+                upstream.raise_for_status()
+                headers["x-selected-backend"] = model
                 return StreamingResponse(
                     upstream.aiter_bytes(),
                     status_code=upstream.status_code,
@@ -224,14 +298,23 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                     headers=headers,
                     background=BackgroundTask(upstream.aclose),
                 )
-            upstream = await request.app.state.client.post(upstream_url, json=upstream_payload, headers=headers)
-            upstream.raise_for_status()
+            upstream, model, fallback_used = await post_completion_with_fallback(
+                request.app.state.client,
+                payload,
+                headers,
+                model,
+                target,
+                fallback_model,
+                fallback_target,
+            )
         except httpx.HTTPError as error:
             span.record_exception(error)
             raise HTTPException(status_code=502, detail="model backend unavailable") from error
 
         response = upstream.json()
-        estimated_cost = request_cost(response.get("usage"), target)
+        response["selected_backend"] = model
+        response["fallback_used"] = fallback_used
+        estimated_cost = request_cost(response.get("usage"), settings.model_targets[model])
         if estimated_cost is not None:
             response["runtime_cost"] = {"currency": "USD", "estimated": estimated_cost}
             span.set_attribute("gen_ai.usage.cost_usd", estimated_cost)

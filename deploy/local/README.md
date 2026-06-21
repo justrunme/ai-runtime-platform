@@ -55,7 +55,7 @@ docker compose -f deploy/local/docker-compose.yaml down -v
 
 ## Run the local canary profile
 
-The canary overlay downloads `qwen2.5:1.5b` and `llama3.2:1b`, then adds the public `small-chat` route: 90% primary and 10% canary.
+The canary overlay downloads `qwen2.5:1.5b` and `llama3.2:1b`, then adds the public `small-chat-canary` route: 90% primary and 10% canary.
 
 ```sh
 docker compose \
@@ -72,10 +72,27 @@ curl http://localhost:8080/v1/routes
 curl http://localhost:8080/v1/chat/completions \
   -H 'content-type: application/json' \
   -H 'x-request-id: canary-demo-001' \
-  -d '{"model":"small-chat","messages":[{"role":"user","content":"Hello"}]}'
+  -d '{"model":"small-chat-canary","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
 The same `X-Request-ID` always resolves to the same model for this route. This makes retries stable; use distinct request IDs to observe the weighted distribution.
+
+## Run the local fallback profile
+
+The fallback overlay configures `small-chat` with Qwen as primary and Llama as fallback. Its primary URL deliberately points to a closed loopback port, so it proves that a connection failure produces a response from the fallback model.
+
+```sh
+docker compose \
+  -f deploy/local/docker-compose.yaml \
+  -f deploy/local/docker-compose.fallback.yaml \
+  up --build --force-recreate
+
+curl http://localhost:8080/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"model":"small-chat","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+The response must contain `"selected_backend":"llama3.2:1b"` and `"fallback_used":true`.
 
 ## Routing contract
 
