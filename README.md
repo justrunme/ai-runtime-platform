@@ -27,6 +27,17 @@ flowchart LR
   ArgoCD --> VLLM
 ```
 
+## How the Projects Fit Together
+
+This repository is part of a larger AI Platform portfolio. Read the [portfolio overview](docs/portfolio-overview.md) for the full architecture.
+
+| Layer | Responsibility | Repository |
+| --- | --- | --- |
+| **AI Runtime Platform** | Executes private LLM inference through an OpenAI-compatible gateway, model routing, vLLM/Ollama, KServe, and KEDA. | [justrunme/ai-runtime-platform](https://github.com/justrunme/ai-runtime-platform) |
+| **AI Infrastructure Control Plane** | Observes, governs, forecasts, and operates AI workloads through telemetry, policy, cost control, risk scoring, approvals, digital twin topology, and GitOps. | [justrunme/ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) |
+
+The Runtime Platform executes AI workloads. The Control Plane uses their operational signals to observe, govern, predict, and control the platform.
+
 ## Local demo evidence
 
 The following snapshots are captured from the CPU-only Ollama + gateway Compose profile. They show the operational signals the gateway exposes to a caller; they are not mocked UI panels.
@@ -240,17 +251,6 @@ gitops/argocd/        Argo CD application
 loadtest/             k6 inference benchmark
 docs/                 Architecture and operational decisions
 ```
-
-## AI infrastructure portfolio
-
-This repository is the runtime half of a two-repository AI infrastructure portfolio:
-
-| Repository | Focus | Demonstrates |
-| --- | --- | --- |
-| [ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) | Governance and operations | Policy, observability, forecasting, approval workflows, and GitOps controls for private AI workloads |
-| **ai-runtime-platform** | Inference runtime | OpenAI-compatible serving, model routing, vLLM/KServe deployment paths, autoscaling, and inference telemetry |
-
-Together, the control plane decides how private AI workloads are governed and operated; the runtime platform serves them reliably and makes routing decisions explicit.
 
 ## Upstream references
 
