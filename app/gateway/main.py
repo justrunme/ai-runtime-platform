@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -18,7 +19,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ModelTarget(BaseModel):
@@ -29,12 +30,44 @@ class ModelTarget(BaseModel):
     output_cost_per_million: float = Field(ge=0)
 
 
+class RouteTarget(BaseModel):
+    """One weighted model target behind a public route alias."""
+
+    model: str
+    weight: int = Field(gt=0)
+
+
+class ModelRoute(BaseModel):
+    """Traffic split for a public model alias."""
+
+    targets: list[RouteTarget] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def has_full_traffic_split(self) -> "ModelRoute":
+        if sum(target.weight for target in self.targets) != 100:
+            raise ValueError("route target weights must total 100")
+        return self
+
+
 class GatewaySettings(BaseModel):
     """Runtime configuration. MODEL_TARGETS is intentionally JSON for GitOps injection."""
 
     model_config = ConfigDict(frozen=True)
     model_targets: dict[str, ModelTarget]
+    model_routes: dict[str, ModelRoute] = Field(default_factory=dict)
     timeout_seconds: float = Field(default=120.0, gt=0)
+
+    @model_validator(mode="after")
+    def route_targets_exist(self) -> "GatewaySettings":
+        missing = {
+            target.model
+            for route in self.model_routes.values()
+            for target in route.targets
+            if target.model not in self.model_targets
+        }
+        if missing:
+            raise ValueError(f"route references unknown models: {', '.join(sorted(missing))}")
+        return self
 
     @classmethod
     def from_environment(cls) -> "GatewaySettings":
@@ -49,21 +82,24 @@ class GatewaySettings(BaseModel):
         model_targets = json.loads(raw_targets) if raw_targets else default_targets
         ollama_base_url = os.getenv("OLLAMA_BASE_URL")
         if ollama_base_url:
-            ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+            ollama_models = os.getenv("OLLAMA_MODELS", os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b"))
             ollama_url = ollama_base_url.rstrip("/")
             if not ollama_url.endswith("/v1"):
                 ollama_url = f"{ollama_url}/v1"
-            model_targets.setdefault(
-                ollama_model,
-                {
-                    "url": ollama_url,
-                    "input_cost_per_million": float(os.getenv("OLLAMA_INPUT_COST_PER_MILLION", "0")),
-                    "output_cost_per_million": float(os.getenv("OLLAMA_OUTPUT_COST_PER_MILLION", "0")),
-                },
-            )
+            for ollama_model in (model.strip() for model in ollama_models.split(",") if model.strip()):
+                model_targets.setdefault(
+                    ollama_model,
+                    {
+                        "url": ollama_url,
+                        "input_cost_per_million": float(os.getenv("OLLAMA_INPUT_COST_PER_MILLION", "0")),
+                        "output_cost_per_million": float(os.getenv("OLLAMA_OUTPUT_COST_PER_MILLION", "0")),
+                    },
+                )
+        raw_routes = os.getenv("MODEL_ROUTES")
         return cls.model_validate(
             {
                 "model_targets": model_targets,
+                "model_routes": json.loads(raw_routes) if raw_routes else {},
                 "timeout_seconds": float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "120")),
             }
         )
@@ -87,6 +123,17 @@ def chat_completions_url(base_url: str) -> str:
     normalized = base_url.rstrip("/")
     suffix = "/chat/completions" if normalized.endswith("/v1") else "/v1/chat/completions"
     return f"{normalized}{suffix}"
+
+
+def select_route_target(route: ModelRoute, request_id: str, route_name: str) -> str:
+    """Select a stable weighted target for a route and request identifier."""
+    bucket = int(hashlib.sha256(f"{route_name}:{request_id}".encode()).hexdigest(), 16) % 100
+    upper_bound = 0
+    for target in route.targets:
+        upper_bound += target.weight
+        if bucket < upper_bound:
+            return target.model
+    raise RuntimeError("validated route did not select a target")
 
 
 def configure_tracing() -> None:
@@ -116,32 +163,58 @@ async def healthz() -> dict[str, str]:
 
 @app.get("/v1/models")
 async def list_models(request: Request) -> dict[str, object]:
+    settings: GatewaySettings = request.app.state.settings
     return {
         "object": "list",
-        "data": [{"id": model, "object": "model"} for model in request.app.state.settings.model_targets],
+        "data": [
+            {"id": model, "object": "model"}
+            for model in [*settings.model_targets, *settings.model_routes]
+        ],
+    }
+
+
+@app.get("/v1/routes")
+async def list_routes(request: Request) -> dict[str, object]:
+    """Expose public route aliases and weights without leaking backend addresses."""
+    settings: GatewaySettings = request.app.state.settings
+    return {
+        "data": [
+            {
+                "id": route_name,
+                "object": "model.route",
+                "targets": [target.model_dump() for target in route.targets],
+            }
+            for route_name, route in settings.model_routes.items()
+        ]
     }
 
 
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
     payload = await request.json()
-    model = payload.get("model")
+    requested_model = payload.get("model")
     settings: GatewaySettings = request.app.state.settings
+    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    route = settings.model_routes.get(requested_model)
+    model = select_route_target(route, request_id, requested_model) if route else requested_model
     target = settings.model_targets.get(model)
     if target is None:
-        raise HTTPException(status_code=404, detail=f"unknown model: {model}")
+        raise HTTPException(status_code=404, detail=f"unknown model or route: {requested_model}")
 
-    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     started_at = time.monotonic()
     headers = {"x-request-id": request_id}
     upstream_url = chat_completions_url(target.url)
+    upstream_payload = {**payload, "model": model}
     with trace.get_tracer(__name__).start_as_current_span("gen_ai.chat") as span:
-        span.set_attribute("gen_ai.request.model", model)
+        span.set_attribute("gen_ai.request.model", requested_model)
+        span.set_attribute("gen_ai.response.model", model)
+        if route:
+            span.set_attribute("ai.runtime.route", requested_model)
         span.set_attribute("gen_ai.operation.name", "chat")
         try:
             if payload.get("stream"):
                 upstream_request = request.app.state.client.build_request(
-                    "POST", upstream_url, json=payload, headers=headers
+                    "POST", upstream_url, json=upstream_payload, headers=headers
                 )
                 upstream = await request.app.state.client.send(upstream_request, stream=True)
                 return StreamingResponse(
@@ -151,7 +224,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                     headers=headers,
                     background=BackgroundTask(upstream.aclose),
                 )
-            upstream = await request.app.state.client.post(upstream_url, json=payload, headers=headers)
+            upstream = await request.app.state.client.post(upstream_url, json=upstream_payload, headers=headers)
             upstream.raise_for_status()
         except httpx.HTTPError as error:
             span.record_exception(error)
