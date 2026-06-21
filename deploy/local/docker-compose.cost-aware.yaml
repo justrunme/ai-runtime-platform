@@ -1,0 +1,12 @@
+services:
+  ollama-init:
+    environment:
+      OLLAMA_MODELS: qwen2.5:1.5b,llama3.2:1b
+
+  gateway:
+    environment:
+      OLLAMA_MODELS: qwen2.5:1.5b,llama3.2:1b
+      MODEL_TARGETS: >-
+        {"qwen2.5:1.5b":{"url":"http://ollama:11434/v1","health_path":"/","input_cost_per_million":1,"output_cost_per_million":1},"llama3.2:1b":{"url":"http://ollama:11434/v1","health_path":"/","input_cost_per_million":0.1,"output_cost_per_million":0.1}}
+      MODEL_ROUTES: >-
+        {"small-chat":{"primary":"qwen2.5:1.5b","fallback":"llama3.2:1b","min_health_score":50,"unhealthy_action":"skip","routing_policy":{"strategy":"balanced","weights":{"health":0.5,"latency":0.3,"cost":0.2}}}}

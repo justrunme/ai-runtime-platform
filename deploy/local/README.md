@@ -102,6 +102,17 @@ The response must contain `"selected_backend":"llama3.2:1b"` and `"fallback_used
 
 This profile also sets `min_health_score: 50`; after the probe loop marks the closed primary port unhealthy, the gateway skips it before attempting a completion. The response includes `"routing_reason":"health_score"`.
 
+## Run the local cost-aware profile
+
+Both Ollama backends are healthy in this overlay, but Llama has a lower configured unit cost. The balanced policy should select Llama with `"routing_reason":"cost_aware"`.
+
+```sh
+docker compose \
+  -f deploy/local/docker-compose.yaml \
+  -f deploy/local/docker-compose.cost-aware.yaml \
+  up --build --force-recreate
+```
+
 ## Routing contract
 
 When `OLLAMA_BASE_URL` is set, the gateway adds `OLLAMA_MODEL` (default: `qwen2.5:1.5b`) as a route to `<OLLAMA_BASE_URL>/v1`. An explicit entry in `MODEL_TARGETS` for the same model name wins, so GitOps configuration can override the local route deterministically.

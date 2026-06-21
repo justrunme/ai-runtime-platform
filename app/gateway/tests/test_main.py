@@ -8,12 +8,15 @@ from app.gateway.main import (
     ModelTarget,
     NoHealthyBackendError,
     RouteTarget,
+    RoutingPolicy,
+    RoutingWeights,
     chat_completions_url,
     post_completion_with_fallback,
     request_cost,
     resolve_route,
     select_route_target,
     select_health_aware_backend,
+    select_cost_aware_backend,
 )
 
 
@@ -212,3 +215,26 @@ async def test_health_aware_route_returns_no_backend_when_all_scores_are_low() -
         await health.probe_all()
         with pytest.raises(NoHealthyBackendError):
             await select_health_aware_backend(health_aware_route(), "qwen", "llama", health)
+
+
+@pytest.mark.anyio
+async def test_cost_aware_route_selects_cheaper_healthy_backend() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request)
+
+    settings = GatewaySettings(
+        model_targets={
+            "qwen": ModelTarget(url="http://primary", input_cost_per_million=1, output_cost_per_million=1),
+            "llama": ModelTarget(url="http://fallback", input_cost_per_million=0.1, output_cost_per_million=0.1),
+        }
+    )
+    route = ModelRoute(
+        primary="qwen",
+        fallback="llama",
+        min_health_score=50,
+        routing_policy=RoutingPolicy(weights=RoutingWeights(health=0.5, latency=0.3, cost=0.2)),
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        health = BackendHealthStore(settings, client)
+        await health.probe_all()
+        assert await select_cost_aware_backend(route, "qwen", "llama", health, settings.model_targets) == ("llama", True)
