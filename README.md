@@ -27,6 +27,14 @@ flowchart LR
   ArgoCD --> VLLM
 ```
 
+## Local demo evidence
+
+The following snapshots are captured from the CPU-only Ollama + gateway Compose profile. They show the operational signals the gateway exposes to a caller; they are not mocked UI panels.
+
+![Local backend health response](docs/images/local-backend-health.svg)
+
+![Local cost-aware routing response](docs/images/local-cost-aware-routing.svg)
+
 ## Demo flow: no GPU required
 
 The local profile proves the public request path on a laptop without compromising the production design:
@@ -232,6 +240,17 @@ gitops/argocd/        Argo CD application
 loadtest/             k6 inference benchmark
 docs/                 Architecture and operational decisions
 ```
+
+## AI infrastructure portfolio
+
+This repository is the runtime half of a two-repository AI infrastructure portfolio:
+
+| Repository | Focus | Demonstrates |
+| --- | --- | --- |
+| [ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) | Governance and operations | Policy, observability, forecasting, approval workflows, and GitOps controls for private AI workloads |
+| **ai-runtime-platform** | Inference runtime | OpenAI-compatible serving, model routing, vLLM/KServe deployment paths, autoscaling, and inference telemetry |
+
+Together, the control plane decides how private AI workloads are governed and operated; the runtime platform serves them reliably and makes routing decisions explicit.
 
 ## Upstream references
 
