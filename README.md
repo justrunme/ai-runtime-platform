@@ -12,6 +12,19 @@ This repository demonstrates the runtime layer of an AI platform: receiving an O
 
 Start with the [30-second demo flow](docs/demo-flow.md) or inspect the [full architecture](docs/architecture.md). The decision loop combines route policy with health, latency, and configured cost to select a backend and makes that decision visible in every completion response.
 
+## Runtime Platform Demo
+
+The gateway behaves like an inference runtime router, not a static proxy: every request is evaluated against route policy, backend health, latency, fallback protection, and configured model cost.
+
+![Full AI Runtime Platform decision loop](docs/images/runtime-demo/full-runtime-decision-loop.gif)
+
+| Scenario | What it shows |
+| --- | --- |
+| ![Canary routing demo](docs/images/runtime-demo/canary-routing-demo.gif) | Stable `X-Request-ID` based 90/10 canary routing between Qwen and Llama. |
+| ![Fallback routing demo](docs/images/runtime-demo/fallback-routing-demo.gif) | Automatic failover when the primary model backend is unavailable. |
+| ![Health-aware routing demo](docs/images/runtime-demo/health-aware-routing.gif) | Preemptive routing away from a backend with a low health score. |
+| ![Cost-aware routing demo](docs/images/runtime-demo/cost-aware-routing.gif) | Balanced runtime selection using health, latency, and configured token cost. |
+
 ```mermaid
 flowchart LR
   Client["Client / OpenAI SDK"] --> Gateway["AI Runtime Gateway"]
@@ -26,6 +39,17 @@ flowchart LR
   ArgoCD["Argo CD"] --> Gateway
   ArgoCD --> VLLM
 ```
+
+## How the Projects Fit Together
+
+This repository is part of a larger AI Platform portfolio. Read the [portfolio overview](docs/portfolio-overview.md) for the full architecture.
+
+| Layer | Responsibility | Repository |
+| --- | --- | --- |
+| **AI Runtime Platform** | Executes private LLM inference through an OpenAI-compatible gateway, model routing, vLLM/Ollama, KServe, and KEDA. | [justrunme/ai-runtime-platform](https://github.com/justrunme/ai-runtime-platform) |
+| **AI Infrastructure Control Plane** | Observes, governs, forecasts, and operates AI workloads through telemetry, policy, cost control, risk scoring, approvals, digital twin topology, and GitOps. | [justrunme/ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) |
+
+The Runtime Platform executes AI workloads. The Control Plane uses their operational signals to observe, govern, predict, and control the platform.
 
 ## Local demo evidence
 
@@ -240,17 +264,6 @@ gitops/argocd/        Argo CD application
 loadtest/             k6 inference benchmark
 docs/                 Architecture and operational decisions
 ```
-
-## AI infrastructure portfolio
-
-This repository is the runtime half of a two-repository AI infrastructure portfolio:
-
-| Repository | Focus | Demonstrates |
-| --- | --- | --- |
-| [ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) | Governance and operations | Policy, observability, forecasting, approval workflows, and GitOps controls for private AI workloads |
-| **ai-runtime-platform** | Inference runtime | OpenAI-compatible serving, model routing, vLLM/KServe deployment paths, autoscaling, and inference telemetry |
-
-Together, the control plane decides how private AI workloads are governed and operated; the runtime platform serves them reliably and makes routing decisions explicit.
 
 ## Upstream references
 
