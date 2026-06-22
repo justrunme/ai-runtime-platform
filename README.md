@@ -1,8 +1,8 @@
 # AI Runtime Platform
 
-> Kubernetes-native runtime for private LLM inference with vLLM, KServe, KEDA, OpenTelemetry and GitOps.
+> Service-mesh style runtime for private LLM inference with an OpenAI-compatible gateway, policy-based routing, vLLM, KServe, KEDA, OpenTelemetry and GitOps.
 
-This repository demonstrates the runtime layer of an AI platform: receiving an OpenAI-compatible request, routing it to a GPU model server, scaling from inference pressure, and emitting operations-grade telemetry. It deliberately does not present a model governance control plane.
+This repository demonstrates the runtime decision layer of an AI platform: receiving an OpenAI-compatible request, evaluating model health, latency, cost and route policy, selecting the best backend, and emitting operations-grade telemetry. It deliberately does not present a model governance control plane.
 
 ## Architecture at a glance
 
@@ -10,7 +10,29 @@ This repository demonstrates the runtime layer of an AI platform: receiving an O
 | --- | --- | --- |
 | Ollama + Docker Compose + CPU | vLLM / KServe / GPU / KEDA / Argo CD | Canary / fallback / health / cost |
 
-Start with the [30-second demo flow](docs/demo-flow.md) or inspect the [full architecture](docs/architecture.md). The decision loop combines route policy with health, latency, and configured cost to select a backend and makes that decision visible in every completion response.
+Start with the [30-second demo flow](docs/demo-flow.md), inspect the [full architecture](docs/architecture.md), or read the [runtime decision engine](docs/runtime-decision-engine.md). The decision loop combines route policy with health, latency, and configured cost to select a backend and makes that decision visible in every completion response.
+
+## Why this is not another LLM proxy
+
+Most simple LLM gateways forward a request to one configured backend. This project models the gateway as an LLM service mesh: the request path becomes a runtime decision point.
+
+```text
+Request
+  -> health score
+  -> latency score
+  -> cost score
+  -> route policy
+  -> canary / fallback guardrails
+  -> selected model backend
+```
+
+| Basic proxy | AI Runtime Platform |
+| --- | --- |
+| Static upstream | Policy-driven backend selection |
+| One model target | Virtual model aliases and weighted routes |
+| Failure after timeout | Health-aware preemptive rerouting |
+| No cost context | Per-request estimated cost attribution |
+| Hidden routing | `selected_backend`, `routing_reason`, `health_score`, `fallback_used` |
 
 ## Runtime Platform Demo
 
