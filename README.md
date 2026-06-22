@@ -12,6 +12,19 @@ This repository demonstrates the runtime layer of an AI platform: receiving an O
 
 Start with the [30-second demo flow](docs/demo-flow.md) or inspect the [full architecture](docs/architecture.md). The decision loop combines route policy with health, latency, and configured cost to select a backend and makes that decision visible in every completion response.
 
+## Runtime Platform Demo
+
+The gateway behaves like an inference runtime router, not a static proxy: every request is evaluated against route policy, backend health, latency, fallback protection, and configured model cost.
+
+![Full AI Runtime Platform decision loop](docs/images/runtime-demo/full-runtime-decision-loop.gif)
+
+| Scenario | What it shows |
+| --- | --- |
+| ![Canary routing demo](docs/images/runtime-demo/canary-routing-demo.gif) | Stable `X-Request-ID` based 90/10 canary routing between Qwen and Llama. |
+| ![Fallback routing demo](docs/images/runtime-demo/fallback-routing-demo.gif) | Automatic failover when the primary model backend is unavailable. |
+| ![Health-aware routing demo](docs/images/runtime-demo/health-aware-routing.gif) | Preemptive routing away from a backend with a low health score. |
+| ![Cost-aware routing demo](docs/images/runtime-demo/cost-aware-routing.gif) | Balanced runtime selection using health, latency, and configured token cost. |
+
 ```mermaid
 flowchart LR
   Client["Client / OpenAI SDK"] --> Gateway["AI Runtime Gateway"]
