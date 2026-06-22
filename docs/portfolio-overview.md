@@ -9,7 +9,7 @@ This repository and [AI Infrastructure Control Plane](https://github.com/justrun
 The runtime layer executes AI workloads:
 
 - OpenAI-compatible API gateway
-- Model routing
+- Runtime decision engine for model routing
 - Canary deployments
 - Fallback, health-aware, and cost-aware routing
 - Ollama and vLLM integration
@@ -62,3 +62,20 @@ flowchart TB
 ```
 
 The Runtime Platform executes AI workloads. The Control Plane observes, governs, predicts, and controls those workloads. Together they demonstrate a complete AI Platform architecture rather than a standalone gateway or an isolated governance service.
+
+## Runtime and control-plane feedback loop
+
+The two repositories become more valuable when they are read as one platform:
+
+```mermaid
+flowchart LR
+  Request["User request"] --> Runtime["AI Runtime Platform"]
+  Runtime --> Model["Selected model backend"]
+  Runtime --> Signals["Telemetry: health, latency, cost, fallback rate"]
+  Signals --> Control["AI Infrastructure Control Plane"]
+  Control --> Governance["Governance decision"]
+  Governance --> Policy["Runtime policy update"]
+  Policy --> Runtime
+```
+
+The runtime makes fast request-time decisions. The control plane evaluates slower operational concerns: governance, budget, risk, forecasting, and approval workflows. A dynamic policy engine would connect those layers by letting the control plane update route weights, thresholds, strategy, and backend eligibility while clients continue using the same OpenAI-compatible API.

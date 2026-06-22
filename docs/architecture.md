@@ -2,7 +2,7 @@
 
 ## In one sentence
 
-AI Runtime Platform is a Kubernetes-native inference runtime that exposes an OpenAI-compatible gateway, runs private LLM backends, and makes explicit routing decisions from live operational signals.
+AI Runtime Platform is a service-mesh style inference runtime that exposes an OpenAI-compatible gateway, runs private LLM backends, and makes explicit routing decisions from live operational signals.
 
 ## Two operating paths
 
@@ -35,12 +35,12 @@ The local path validates the same public gateway contract and routing behaviour 
 ```mermaid
 flowchart LR
   Request["/v1/chat/completions"] --> Alias["Resolve model or route alias"]
-  Alias --> Canary{"Weighted canary?"}
+  Alias --> Signals["Health score + latency + unit cost"]
+  Signals --> Policy["Routing policy"]
+  Policy --> Canary{"Weighted canary?"}
   Canary -->|yes| Affinity["Hash route + X-Request-ID"]
-  Canary -->|no| Policy["Failover policy"]
-  Affinity --> Policy
-  Policy --> Signals["Health score + latency + unit cost"]
-  Signals --> Select["Select backend"]
+  Canary -->|no| Select["Select backend"]
+  Affinity --> Select
   Select --> Infer["Inference request"]
   Infer --> Retry{"Timeout, network error, or 5xx?"}
   Retry -->|yes| Fallback["Retry fallback once"]
@@ -66,6 +66,37 @@ The router supports two route types:
 | Route policy | `MODEL_ROUTES` | Defines traffic split, threshold, and strategy |
 
 For a balanced policy, the default weights are health 0.5, latency 0.3, and cost 0.2. The response makes the outcome inspectable through `selected_backend`, `routing_reason`, `health_score`, `estimated_cost`, and `fallback_used`.
+
+## Runtime topology
+
+In production, model backends should be treated as operational nodes, not static upstream URLs:
+
+```mermaid
+flowchart LR
+  Gateway["AI Runtime Gateway"]
+
+  Gateway --> Qwen["Qwen backend\nhealth, TPS, latency, cost, fallback rate"]
+  Gateway --> Llama["Llama backend\nhealth, TPS, latency, cost, fallback rate"]
+  Gateway --> Mistral["Mistral backend\nhealth, TPS, latency, cost, fallback rate"]
+  Gateway --> DeepSeek["DeepSeek backend\nhealth, TPS, latency, cost, fallback rate"]
+```
+
+This topology is what makes the gateway closer to an LLM service mesh than a simple proxy. Backends are selected from their current runtime characteristics and configured policy, not only from static model names.
+
+## Policy loop with the control plane
+
+The runtime executes requests. A control plane can observe the runtime, evaluate governance or budget constraints, and publish updated routing policy:
+
+```mermaid
+flowchart LR
+  Runtime["AI Runtime Platform"] --> Telemetry["Telemetry: health, latency, cost, fallback rate"]
+  Telemetry --> Control["AI Infrastructure Control Plane"]
+  Control --> Decision["Governance / budget / risk / capacity decision"]
+  Decision --> Policy["Runtime policy update"]
+  Policy --> Runtime
+```
+
+The current gateway reads policy from configuration. The next platform step is a dynamic policy engine that can update strategy, weights, thresholds, and backend eligibility without changing the client contract. See [Runtime Decision Engine](runtime-decision-engine.md).
 
 ## Operational boundaries
 
