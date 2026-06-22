@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Local backend health endpoint</title>
+  <desc id="desc">A captured local AI Runtime Platform backend-health response showing healthy Qwen and Llama backends.</desc>
+  <rect width="1200" height="630" fill="#07111f"/>
+  <rect x="42" y="38" width="1116" height="554" rx="18" fill="#0b1b31" stroke="#1e3a5f" stroke-width="2"/>
+  <text x="82" y="91" fill="#7dd3fc" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">AI RUNTIME PLATFORM · LOCAL COMPOSE DEMO</text>
+  <text x="82" y="136" fill="#f8fafc" font-family="Arial, sans-serif" font-size="30" font-weight="700">Backend health</text>
+  <text x="82" y="168" fill="#94a3b8" font-family="Arial, sans-serif" font-size="18">GET /v1/backends/health</text>
+  <rect x="1010" y="78" width="106" height="34" rx="17" fill="#052e1b" stroke="#166534"/>
+  <text x="1034" y="100" fill="#86efac" font-family="Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="1">LIVE</text>
+  <rect x="82" y="210" width="1036" height="325" rx="12" fill="#020817"/>
+  <text x="116" y="257" fill="#dbeafe" font-family="Menlo, Monaco, monospace" font-size="21">{</text>
+  <text x="142" y="294" fill="#c4e7ff" font-family="Menlo, Monaco, monospace" font-size="21">&quot;backends&quot;: [</text>
+  <text x="170" y="331" fill="#c4e7ff" font-family="Menlo, Monaco, monospace" font-size="21">{ &quot;name&quot;: &quot;qwen2.5:1.5b&quot;, &quot;status&quot;: &quot;healthy&quot;, &quot;score&quot;: 100 },</text>
+  <text x="170" y="368" fill="#c4e7ff" font-family="Menlo, Monaco, monospace" font-size="21">{ &quot;name&quot;: &quot;llama3.2:1b&quot;, &quot;status&quot;: &quot;healthy&quot;, &quot;score&quot;: 80 }</text>
+  <text x="142" y="405" fill="#c4e7ff" font-family="Menlo, Monaco, monospace" font-size="21">]</text>
+  <text x="116" y="442" fill="#dbeafe" font-family="Menlo, Monaco, monospace" font-size="21">}</text>
+  <line x1="82" y1="560" x2="1118" y2="560" stroke="#1e3a5f"/>
+  <text x="82" y="580" fill="#94a3b8" font-family="Arial, sans-serif" font-size="15">Gateway probes each configured backend and exposes a 0–100 health score for routing.</text>
+</svg>
