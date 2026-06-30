@@ -9,13 +9,13 @@ test:
 	python -m pytest
 
 lint:
-	python -m ruff check app
+	python -m ruff check app experiments
 
 fmt:
-	python -m ruff format app
+	python -m ruff format app experiments
 
 fmt-check:
-	python -m ruff format --check app
+	python -m ruff format --check app experiments
 
 helm-lint:
 	helm lint charts/vllm-runtime

@@ -102,6 +102,9 @@ def build_evaluate_payload(
     payload: dict[str, Any],
     config: GovernanceConfig,
     model_targets: dict[str, Any],
+    *,
+    requests_last_minute: int | None = None,
+    tokens_today: int | None = None,
 ) -> dict[str, Any]:
     input_tokens, output_tokens = _estimate_tokens(payload)
     model = str(payload.get("model") or "unknown")
@@ -112,9 +115,14 @@ def build_evaluate_payload(
         (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000,
         6,
     )
+    team = (
+        request.headers.get("x-ai-team")
+        or request.headers.get("x-ai-tenant")
+        or config.default_team
+    )
 
     return {
-        "team": request.headers.get("x-ai-team", config.default_team),
+        "team": team,
         "owner": request.headers.get("x-ai-owner", config.default_owner),
         "environment": request.headers.get("x-ai-environment", config.default_environment),
         "namespace": request.headers.get("x-ai-namespace", config.default_namespace),
@@ -140,6 +148,10 @@ def build_evaluate_payload(
         "sensitive_data": _header_bool(request, "x-ai-sensitive-data"),
         "tool_access": _header_bool(request, "x-ai-tool-access"),
         "write_permission": _header_bool(request, "x-ai-write-permission"),
+        "requests_last_minute": int(
+            request.headers.get("x-ai-requests-last-minute", requests_last_minute or 0)
+        ),
+        "tokens_today": int(request.headers.get("x-ai-tokens-today", tokens_today or 0)),
     }
 
 
@@ -149,12 +161,22 @@ async def enforce_governance(
     request: Request,
     payload: dict[str, Any],
     model_targets: dict[str, Any],
+    *,
+    requests_last_minute: int | None = None,
+    tokens_today: int | None = None,
 ) -> dict[str, Any] | None:
     """Call the control plane and reject the request when governance blocks it."""
     if not config.enabled:
         return None
 
-    body = build_evaluate_payload(request, payload, config, model_targets)
+    body = build_evaluate_payload(
+        request,
+        payload,
+        config,
+        model_targets,
+        requests_last_minute=requests_last_minute,
+        tokens_today=tokens_today,
+    )
     evaluate_url = f"{config.control_plane_url}/governance/evaluate"
 
     try:

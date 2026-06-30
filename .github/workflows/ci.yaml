@@ -21,8 +21,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[dev]'
-      - run: python -m ruff check app
-      - run: python -m ruff format --check app
+      - run: python -m ruff check app experiments
+      - run: python -m ruff format --check app experiments
       - run: python -m pytest
 
   manifests:

@@ -123,6 +123,8 @@ The first launch downloads `qwen2.5:1.5b` (Ollama `0.30.10`), then serves it thr
 
 - OpenAI-compatible `POST /v1/chat/completions` gateway with explicit model-to-backend routing.
 - Optional governance enforcement adapter: calls control plane `/governance/evaluate` before upstream execution when `CONTROL_PLANE_URL` is configured.
+- SLO-based canary promotion simulator in `experiments/canary-analysis/` for promote/hold/rollback recommendations from shadow metrics.
+- Workload identity prototype with `TENANT_ATTRIBUTION_ENABLED` and `gateway_tenant_*` Prometheus metrics.
 - Gateway-generated request ID propagation, OpenTelemetry spans exported over OTLP (console fallback), and estimated cost from the returned token usage.
 - Optional API-key authentication and a Prometheus `/metrics` endpoint exposing the gateway's own routing, fallback, latency, and cost signals.
 - Production-oriented vLLM Helm chart (`vllm-openai:v0.24.0`): GPU requests/limits, GPU node selection, probes, a Prometheus metrics service, and optional `ServiceMonitor`.
