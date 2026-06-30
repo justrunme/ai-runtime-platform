@@ -13,9 +13,9 @@
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
-> Service-mesh style runtime for private LLM inference with an OpenAI-compatible gateway, policy-based routing, vLLM, KServe, KEDA, OpenTelemetry and GitOps.
+> **Execution Plane** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — reference OpenAI-compatible gateway for private AI on Kubernetes.
 
-This repository demonstrates the runtime decision layer of an AI platform: receiving an OpenAI-compatible request, evaluating model health, latency, cost and route policy, selecting the best backend, and emitting operations-grade telemetry. When `CONTROL_PLANE_URL` is set, the gateway also enforces governance verdicts from the [AI Infrastructure Control Plane](https://github.com/justrunme/ai-infra-control-plane) before inference execution. See [runtime enforcement mode](docs/runtime-enforcement-mode.md).
+This repository is the **Execution Plane**: routing, shadow traffic, cost attribution, and optional enforcement of [Control Plane](https://github.com/justrunme/ai-infra-control-plane) governance verdicts. See [runtime enforcement mode](docs/runtime-enforcement-mode.md) and the [platform roadmap](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md).
 
 ## Platform Signals
 
@@ -85,14 +85,14 @@ flowchart LR
 
 ## How the Projects Fit Together
 
-This repository is part of a larger AI Platform portfolio. Read the [portfolio overview](docs/portfolio-overview.md) for the full architecture.
+This repository is the **Execution Plane** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md).
 
-| Layer | Responsibility | Repository |
+| Layer | Role | Repository |
 | --- | --- | --- |
-| **AI Runtime Platform** | Executes private LLM inference through an OpenAI-compatible gateway, model routing, vLLM/Ollama, KServe, and KEDA. | [justrunme/ai-runtime-platform](https://github.com/justrunme/ai-runtime-platform) |
-| **AI Infrastructure Control Plane** | Observes, governs, forecasts, and operates AI workloads through telemetry, policy, cost control, risk scoring, approvals, digital twin topology, and GitOps. | [justrunme/ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) |
+| **Execution Plane** | Inference gateway, routing, shadow, enforcement | [justrunme/ai-runtime-platform](https://github.com/justrunme/ai-runtime-platform) |
+| **Control Plane** | Policy, cost, topology, drift, SLO | [justrunme/ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) |
 
-The Runtime Platform executes AI workloads. The Control Plane evaluates governance policy; the runtime can enforce those verdicts at the inference boundary via `CONTROL_PLANE_URL`.
+The Execution Plane runs workloads and enforces Control Plane verdicts via `CONTROL_PLANE_URL`.
 
 ## Local demo evidence
 

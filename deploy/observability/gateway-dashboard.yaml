@@ -42,6 +42,16 @@ data:
           "type": "timeseries",
           "title": "Shadow traffic rate by backend",
           "targets": [{"expr": "sum by (shadow_backend, outcome) (rate(gateway_chat_shadow_total[5m]))", "legendFormat": "{{shadow_backend}} {{outcome}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Tenant request rate",
+          "targets": [{"expr": "sum by (team) (rate(gateway_tenant_requests_total[5m]))", "legendFormat": "{{team}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Governance decisions by tenant",
+          "targets": [{"expr": "sum by (team, verdict) (rate(gateway_governance_decisions_total[5m]))", "legendFormat": "{{team}} {{verdict}}"}]
         }
       ]
     }
