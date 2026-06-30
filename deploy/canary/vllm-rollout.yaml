@@ -18,7 +18,7 @@ spec:
         nvidia.com/gpu.present: "true"
       containers:
         - name: vllm
-          image: vllm/vllm-openai:v0.13.0
+          image: vllm/vllm-openai:v0.24.0
           args: ["--model=Qwen/Qwen2.5-7B-Instruct", "--served-model-name=qwen2.5-7b-instruct"]
           resources:
             limits:

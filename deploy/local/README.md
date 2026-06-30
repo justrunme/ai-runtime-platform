@@ -47,10 +47,13 @@ The response includes the original OpenAI-compatible body. `runtime_cost.estimat
 
 ## Change the model
 
-Choose an Ollama model suitable for the available memory, then start the stack with it:
+Choose an Ollama model suitable for the available memory, then start the stack with it. The Compose profile pins `ollama/ollama:0.30.10`; override with `OLLAMA_IMAGE` if your environment requires a different build.
 
 ```sh
 OLLAMA_MODEL=llama3.2:3b docker compose -f deploy/local/docker-compose.yaml up --build
+
+# Newer Qwen generation (requires more RAM than qwen2.5:1.5b)
+OLLAMA_MODEL=qwen3:4b docker compose -f deploy/local/docker-compose.yaml up --build
 ```
 
 The same exact model name must be sent in the `model` field. To remove the downloaded model volume:

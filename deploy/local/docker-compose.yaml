@@ -2,7 +2,7 @@ name: ai-runtime-local
 
 services:
   ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.13.4}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.30.10}
     dns:
       - ${LOCAL_DEMO_DNS_PRIMARY:-1.1.1.1}
       - ${LOCAL_DEMO_DNS_SECONDARY:-8.8.8.8}
@@ -17,7 +17,7 @@ services:
       retries: 24
 
   ollama-init:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.13.4}
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.30.10}
     depends_on:
       ollama:
         condition: service_healthy

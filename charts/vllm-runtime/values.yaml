@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: vllm/vllm-openai
-  tag: v0.13.0
+  tag: v0.24.0
   pullPolicy: IfNotPresent
 
 model:
