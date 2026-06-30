@@ -208,6 +208,8 @@ The gateway exposes its own Prometheus metrics at `GET /metrics`, independent of
 | `gateway_chat_fallback_total` | counter | `selected_backend`, `routing_reason` |
 | `gateway_chat_duration_seconds` | histogram | `routing_reason` |
 | `gateway_chat_estimated_cost_usd_total` | counter | `selected_backend` |
+| `gateway_chat_shadow_total` | counter | `shadow_backend`, `outcome` |
+| `gateway_chat_shadow_duration_seconds` | histogram | `shadow_backend` |
 
 The base deployment carries `prometheus.io/scrape` pod annotations, and `deploy/observability/gateway-servicemonitor.yaml` provides a Prometheus Operator `ServiceMonitor`. A companion Grafana dashboard for these routing, fallback, latency, and cost series ships in `deploy/observability/gateway-dashboard.yaml`. Traces are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and fall back to a console exporter locally.
 
@@ -221,10 +223,13 @@ The gateway supports a virtual model alias that resolves to weighted backends. T
     "targets": [
       {"model": "qwen2.5:1.5b", "weight": 90},
       {"model": "llama3.2:1b", "weight": 10}
-    ]
+    ],
+    "shadow": "llama3.2:1b"
   }
 }
 ```
+
+When `shadow` is set, the gateway still serves the client from the selected backend but mirrors a capped copy of the request to the shadow model. The response includes `shadow_backend`; shadow latency and outcome land in `/metrics` and `GET /v1/decisions/{request_id}` without affecting client latency.
 
 Set that JSON in `MODEL_ROUTES`, with every referenced model declared in `MODEL_TARGETS` (or supplied by `OLLAMA_MODELS` locally). The gateway hashes `X-Request-ID` with the route name, so retries with the same ID remain on the same backend. It forwards the selected model name upstream and records both requested and selected models in tracing.
 
@@ -238,6 +243,33 @@ curl http://localhost:8080/v1/chat/completions \
 ```
 
 Route percentages control request allocation, not quality or safety. Promote a canary only after evaluating comparable latency, error, token-throughput, cost, and task-quality signals.
+
+## Replay routing decisions (`arp`)
+
+Every completion records a routing decision keyed by `X-Request-ID`. Inspect it through the API or the operator CLI:
+
+```sh
+pip install -e .
+
+curl http://localhost:8080/v1/decisions/canary-demo-001
+
+arp replay --request-id canary-demo-001 --gateway http://localhost:8080
+```
+
+The tree view shows selected backend, routing reason, health score, latency, optional shadow outcome, and estimated cost.
+
+## Chaos resilience demo
+
+The chaos Compose overlay keeps a dead primary and a live fallback, then runs a sidecar that hammers the failover route:
+
+```sh
+docker compose \
+  -f deploy/local/docker-compose.yaml \
+  -f deploy/local/docker-compose.chaos.yaml \
+  up --build
+```
+
+Watch `chaos-monkey` logs for responses with `"selected_backend":"llama3.2:1b"` and `"fallback_used":true`.
 
 ## Model fallback routing
 

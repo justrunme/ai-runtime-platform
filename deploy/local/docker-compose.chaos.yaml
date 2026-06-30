@@ -1,0 +1,37 @@
+# Chaos resilience overlay: primary backend is intentionally unreachable and a
+# sidecar hammers the failover route so logs show automatic recovery.
+#
+#   docker compose \
+#     -f deploy/local/docker-compose.yaml \
+#     -f deploy/local/docker-compose.chaos.yaml \
+#     up --build
+services:
+  gateway:
+    environment:
+      OLLAMA_MODELS: qwen2.5:1.5b,llama3.2:1b
+      MODEL_TARGETS: >-
+        {"qwen2.5:1.5b":{"url":"http://127.0.0.1:1","input_cost_per_million":0,"output_cost_per_million":0}}
+      MODEL_ROUTES: >-
+        {"small-chat":{"primary":"qwen2.5:1.5b","fallback":"llama3.2:1b","min_health_score":50,"unhealthy_action":"skip"}}
+
+  chaos-monkey:
+    image: curlimages/curl:8.11.1
+    depends_on:
+      gateway:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "chaos demo: dead primary, gateway should serve llama fallback"
+        while true; do
+          RID="chaos-$$(date +%s)"
+          curl -sf \
+            -H "x-request-id: $$RID" \
+            -H "content-type: application/json" \
+            -d '{"model":"small-chat","messages":[{"role":"user","content":"ping"}],"max_tokens":8}' \
+            http://gateway:8080/v1/chat/completions \
+            | tr -d '\n' | head -c 240
+          echo ""
+          sleep 15
+        done
+    restart: unless-stopped
