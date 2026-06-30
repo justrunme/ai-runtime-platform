@@ -332,6 +332,7 @@ def _bootstrap_app_state(handler, *, api_keys: frozenset[str] = frozenset()) -> 
     app.state.client = upstream
     app.state.backend_health = BackendHealthStore(settings, upstream)
     app.state.decision_store = create_decision_store(None)
+    app.state.governance = None
     return upstream
 
 
@@ -443,6 +444,7 @@ async def test_cost_aware_completion_routes_to_cheaper_backend() -> None:
     app.state.client = upstream
     app.state.backend_health = BackendHealthStore(settings, upstream)
     app.state.decision_store = create_decision_store(None)
+    app.state.governance = None
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
         body = (

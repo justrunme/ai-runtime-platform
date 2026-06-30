@@ -115,6 +115,7 @@ async def test_decision_endpoint_returns_recorded_routing() -> None:
     app.state.client = upstream
     app.state.backend_health = BackendHealthStore(settings, upstream)
     app.state.decision_store = create_decision_store(None)
+    app.state.governance = None
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
         await client.post(
