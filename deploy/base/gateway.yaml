@@ -14,20 +14,46 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: ai-runtime-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
+      serviceAccountName: ai-runtime-gateway
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-runtime-gateway
       containers:
         - name: gateway
           image: ghcr.io/justrunme/ai-runtime-platform:0.1.0
           ports:
             - name: http
               containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: ai-runtime-gateway-config
           env:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: ai-runtime-gateway
+            # Supply a comma-separated key list to enable request authentication.
+            # The deployment stays open until this secret is created.
+            - name: GATEWAY_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ai-runtime-gateway-auth
+                  key: api-keys
+                  optional: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

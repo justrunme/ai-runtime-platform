@@ -11,20 +11,23 @@ dependencies = [
   "fastapi>=0.115,<1.0",
   "httpx>=0.27,<1.0",
   "opentelemetry-api>=1.28,<2.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.28,<2.0",
   "opentelemetry-instrumentation-fastapi>=0.49b0",
   "opentelemetry-sdk>=1.28,<2.0",
+  "prometheus-client>=0.20,<1.0",
   "pydantic>=2.9,<3.0",
   "uvicorn[standard]>=0.30,<1.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3,<9.0", "ruff>=0.8,<1.0"]
+dev = ["anyio>=4.4,<5.0", "pytest>=8.3,<9.0", "ruff>=0.8,<1.0"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["app/gateway/tests"]
+markers = ["anyio: run the test on the configured anyio backend"]
 
 [tool.ruff]
 line-length = 100

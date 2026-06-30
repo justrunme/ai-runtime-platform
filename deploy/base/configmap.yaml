@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-runtime-gateway-config
+  namespace: ai-runtime
+  labels:
+    app.kubernetes.io/name: ai-runtime-gateway
+# Starting profile only. Pin model targets, routes, and timeouts per cluster through GitOps.
+data:
+  MODEL_TARGETS: |
+    {
+      "qwen2.5-7b-instruct": {
+        "url": "http://qwen-vllm-runtime.ai-runtime.svc.cluster.local:8000",
+        "input_cost_per_million": 0.20,
+        "output_cost_per_million": 0.20
+      }
+    }
+  MODEL_ROUTES: "{}"
+  UPSTREAM_TIMEOUT_SECONDS: "120"
+  BACKEND_HEALTH_INTERVAL_SECONDS: "15"

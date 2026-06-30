@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 import httpx
 
@@ -10,10 +12,13 @@ from app.gateway.main import (
     RouteTarget,
     RoutingPolicy,
     RoutingWeights,
+    app,
     chat_completions_url,
     post_completion_with_fallback,
     request_cost,
+    request_is_authorized,
     resolve_route,
+    routing_reason,
     select_route_target,
     select_health_aware_backend,
     select_cost_aware_backend,
@@ -238,3 +243,82 @@ async def test_cost_aware_route_selects_cheaper_healthy_backend() -> None:
         health = BackendHealthStore(settings, client)
         await health.probe_all()
         assert await select_cost_aware_backend(route, "qwen", "llama", health, settings.model_targets) == ("llama", True)
+
+
+def test_routing_reason_precedence() -> None:
+    assert routing_reason(cost_rerouted=True, health_rerouted=True, fallback_used=True) == "cost_aware"
+    assert routing_reason(cost_rerouted=False, health_rerouted=True, fallback_used=True) == "health_score"
+    assert routing_reason(cost_rerouted=False, health_rerouted=False, fallback_used=True) == "fallback"
+    assert routing_reason(cost_rerouted=False, health_rerouted=False, fallback_used=False) == "primary"
+
+
+def test_api_keys_are_parsed_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("GATEWAY_API_KEYS", " key-a , key-b ,, ")
+    assert GatewaySettings.from_environment().api_keys == frozenset({"key-a", "key-b"})
+
+
+def test_request_is_authorized_accepts_bearer_and_x_api_key() -> None:
+    keys = frozenset({"secret"})
+    assert request_is_authorized(SimpleNamespace(headers={"authorization": "Bearer secret"}), keys)
+    assert request_is_authorized(SimpleNamespace(headers={"x-api-key": "secret"}), keys)
+    assert not request_is_authorized(SimpleNamespace(headers={"authorization": "Bearer wrong"}), keys)
+    assert not request_is_authorized(SimpleNamespace(headers={}), keys)
+
+
+def _bootstrap_app_state(handler, *, api_keys: frozenset[str] = frozenset()) -> httpx.AsyncClient:
+    settings = GatewaySettings(
+        model_targets={
+            "qwen": ModelTarget(url="http://primary", input_cost_per_million=0, output_cost_per_million=0),
+            "llama": ModelTarget(url="http://fallback", input_cost_per_million=0, output_cost_per_million=0),
+        },
+        model_routes={"small-chat": ModelRoute(primary="qwen", fallback="llama")},
+        api_keys=api_keys,
+    )
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    app.state.settings = settings
+    app.state.client = upstream
+    app.state.backend_health = BackendHealthStore(settings, upstream)
+    return upstream
+
+
+@pytest.mark.anyio
+async def test_streaming_fallback_records_health_and_headers() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "primary":
+            return httpx.Response(503, request=request)
+        return httpx.Response(200, content=b"data: ok\n\n", headers={"content-type": "text/event-stream"})
+
+    upstream = _bootstrap_app_state(handler)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        response = await client.post(
+            "/v1/chat/completions", json={"model": "small-chat", "stream": True, "messages": []}
+        )
+    assert response.status_code == 200
+    assert response.headers["x-selected-backend"] == "llama"
+    assert response.headers["x-fallback-used"] == "true"
+    snapshot = {row["model"]: row for row in await app.state.backend_health.snapshot()}
+    assert snapshot["qwen"]["error_rate"] == 1.0
+    assert snapshot["llama"]["fallback_rate"] == 1.0
+    await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_api_key_is_required_when_configured() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    upstream = _bootstrap_app_state(handler, api_keys=frozenset({"secret"}))
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        unauthorized = await client.post("/v1/chat/completions", json={"model": "qwen", "messages": []})
+        authorized = await client.post(
+            "/v1/chat/completions",
+            json={"model": "qwen", "messages": []},
+            headers={"x-api-key": "secret"},
+        )
+        health_open = await client.get("/healthz")
+    assert unauthorized.status_code == 401
+    assert authorized.status_code == 200
+    assert health_open.status_code == 200
+    await upstream.aclose()

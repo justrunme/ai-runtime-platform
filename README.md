@@ -101,7 +101,8 @@ The first launch downloads `qwen2.5:1.5b`, then serves it through the gateway's 
 ## What is implemented
 
 - OpenAI-compatible `POST /v1/chat/completions` gateway with explicit model-to-backend routing.
-- Gateway-generated request ID propagation, OpenTelemetry spans, and estimated cost from the returned token usage.
+- Gateway-generated request ID propagation, OpenTelemetry spans exported over OTLP (console fallback), and estimated cost from the returned token usage.
+- Optional API-key authentication and a Prometheus `/metrics` endpoint exposing the gateway's own routing, fallback, latency, and cost signals.
 - Production-oriented vLLM Helm chart: GPU requests/limits, GPU node selection, probes, a Prometheus metrics service, and optional `ServiceMonitor`.
 - KServe `InferenceService` example in Standard mode for a generative workload.
 - KEDA `ScaledObject` based on vLLM queue pressure (`vllm:num_requests_waiting`), rather than CPU utilization.
@@ -163,6 +164,32 @@ The gateway accepts the standard OpenAI chat-completions shape and reads model t
 
 `runtime_cost.estimated` is an attribution estimate based on the returned `usage` block. It is not a cloud billing source of truth.
 
+## Authentication
+
+Authentication is off by default so the local demo stays frictionless. Set `GATEWAY_API_KEYS` to a comma-separated list of keys to require one on every `/v1/*` request; `/healthz` and `/metrics` stay open for probes and scraping. Callers present the key as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+
+```sh
+curl http://localhost:8080/v1/chat/completions \
+  -H 'authorization: Bearer my-key' \
+  -H 'content-type: application/json' \
+  -d '{"model":"qwen2.5:1.5b","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+In the Kubernetes path the value is read from the optional `ai-runtime-gateway-auth` Secret (`api-keys` field). This is a single shared-key layer; per-tenant keys, quotas, and JWT/OIDC remain a mesh/gateway concern on the roadmap.
+
+## Metrics
+
+The gateway exposes its own Prometheus metrics at `GET /metrics`, independent of the upstream vLLM metrics:
+
+| Metric | Type | Labels |
+| --- | --- | --- |
+| `gateway_chat_requests_total` | counter | `requested_model`, `selected_backend`, `routing_reason`, `outcome` |
+| `gateway_chat_fallback_total` | counter | `selected_backend`, `routing_reason` |
+| `gateway_chat_duration_seconds` | histogram | `routing_reason` |
+| `gateway_chat_estimated_cost_usd_total` | counter | `selected_backend` |
+
+The base deployment carries `prometheus.io/scrape` pod annotations, and `deploy/observability/gateway-servicemonitor.yaml` provides a Prometheus Operator `ServiceMonitor`. Traces are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and fall back to a console exporter locally.
+
 ## Canary model rollout
 
 The gateway supports a virtual model alias that resolves to weighted backends. This lets clients retain one model identifier while a new model receives a controlled fraction of traffic.
@@ -206,6 +233,8 @@ A failover route has an ordered primary and fallback, rather than a weighted spl
 
 For non-streaming completions, the gateway retries the fallback once when the primary times out, encounters a network error, or returns a `5xx`. It does not mask client-side `4xx` errors. The response has top-level `selected_backend` and `fallback_used` fields; streaming responses convey the same information through `X-Selected-Backend` and `X-Fallback-Used` headers.
 
+Both request paths feed the health store: a failed primary and the served backend are recorded for streaming and non-streaming completions, so `error_rate` and `fallback_rate` reflect all traffic. Streaming failover is limited to the response headers stage; once upstream bytes start flowing, a mid-stream error cannot be transparently re-routed.
+
 ## Backend health scoring
 
 Each gateway replica probes every configured backend on `BACKEND_HEALTH_INTERVAL_SECONDS` (15 seconds by default). It combines probe availability and latency with request-path error and fallback rates into a `0–100` score:
@@ -230,7 +259,7 @@ curl http://localhost:8080/v1/backends/health
 }
 ```
 
-The current store is in-memory per gateway replica, which is deliberate for the MVP. A horizontally scaled production gateway must export these signals to Prometheus or aggregate them in a shared telemetry backend before making fleet-wide routing decisions.
+The current store is in-memory per gateway replica, which is deliberate for the MVP. The gateway now exports request, fallback, latency, and cost signals through `/metrics`, but each replica still scores and routes from its own local view. A horizontally scaled production gateway should drive routing from the shared Prometheus aggregate before treating these decisions as fleet-wide.
 
 ## Health-aware routing
 
@@ -296,9 +325,9 @@ docs/                 Architecture and operational decisions
 
 ## Roadmap
 
-1. Add Envoy AI Gateway policies, per-tenant API keys, rate limits, and JWT/OIDC authentication.
+1. Extend the shared-key auth into Envoy AI Gateway policies, per-tenant API keys, rate limits, and JWT/OIDC authentication.
 2. Add Ray Serve LLM as a multi-model/pipeline deployment profile.
-3. Export a Grafana dashboard and SLO recording rules for TTFT, TPOT, queue depth, and error budget.
+3. Build a Grafana dashboard and SLO recording rules on the exported gateway metrics for TTFT, TPOT, queue depth, and error budget.
 4. Add canary analysis gates and rollback based on live latency/error signals.
 5. Add a reproducible benchmark report for a named GPU/model/version profile.
 
