@@ -15,7 +15,7 @@
 
 > Service-mesh style runtime for private LLM inference with an OpenAI-compatible gateway, policy-based routing, vLLM, KServe, KEDA, OpenTelemetry and GitOps.
 
-This repository demonstrates the runtime decision layer of an AI platform: receiving an OpenAI-compatible request, evaluating model health, latency, cost and route policy, selecting the best backend, and emitting operations-grade telemetry. It deliberately does not present a model governance control plane.
+This repository demonstrates the runtime decision layer of an AI platform: receiving an OpenAI-compatible request, evaluating model health, latency, cost and route policy, selecting the best backend, and emitting operations-grade telemetry. When `CONTROL_PLANE_URL` is set, the gateway also enforces governance verdicts from the [AI Infrastructure Control Plane](https://github.com/justrunme/ai-infra-control-plane) before inference execution. See [runtime enforcement mode](docs/runtime-enforcement-mode.md).
 
 ## Platform Signals
 
@@ -92,7 +92,7 @@ This repository is part of a larger AI Platform portfolio. Read the [portfolio o
 | **AI Runtime Platform** | Executes private LLM inference through an OpenAI-compatible gateway, model routing, vLLM/Ollama, KServe, and KEDA. | [justrunme/ai-runtime-platform](https://github.com/justrunme/ai-runtime-platform) |
 | **AI Infrastructure Control Plane** | Observes, governs, forecasts, and operates AI workloads through telemetry, policy, cost control, risk scoring, approvals, digital twin topology, and GitOps. | [justrunme/ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) |
 
-The Runtime Platform executes AI workloads. The Control Plane uses their operational signals to observe, govern, predict, and control the platform.
+The Runtime Platform executes AI workloads. The Control Plane evaluates governance policy; the runtime can enforce those verdicts at the inference boundary via `CONTROL_PLANE_URL`.
 
 ## Local demo evidence
 
@@ -122,6 +122,7 @@ The first launch downloads `qwen2.5:1.5b` (Ollama `0.30.10`), then serves it thr
 ## What is implemented
 
 - OpenAI-compatible `POST /v1/chat/completions` gateway with explicit model-to-backend routing.
+- Optional governance enforcement adapter: calls control plane `/governance/evaluate` before upstream execution when `CONTROL_PLANE_URL` is configured.
 - Gateway-generated request ID propagation, OpenTelemetry spans exported over OTLP (console fallback), and estimated cost from the returned token usage.
 - Optional API-key authentication and a Prometheus `/metrics` endpoint exposing the gateway's own routing, fallback, latency, and cost signals.
 - Production-oriented vLLM Helm chart (`vllm-openai:v0.24.0`): GPU requests/limits, GPU node selection, probes, a Prometheus metrics service, and optional `ServiceMonitor`.

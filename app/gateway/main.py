@@ -30,6 +30,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.gateway.decisions import DecisionRecord, DecisionStore, create_decision_store
+from app.gateway.governance import GovernanceConfig, enforce_governance
 
 
 CHAT_REQUESTS = Counter(
@@ -695,6 +696,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
+    app.state.governance = GovernanceConfig.from_environment()
     health_task = asyncio.create_task(
         health_probe_loop(app.state.backend_health, settings.health_interval_seconds)
     )
@@ -845,6 +847,15 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     requested_model = payload.get("model")
     settings: GatewaySettings = request.app.state.settings
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    governance: GovernanceConfig | None = request.app.state.governance
+    if governance is not None:
+        await enforce_governance(
+            request.app.state.client,
+            governance,
+            request,
+            payload,
+            settings.model_targets,
+        )
     route = settings.model_routes.get(requested_model)
     model, fallback_model = resolve_route(route, request_id, requested_model)
     try:
