@@ -1,12 +1,29 @@
 # AI Runtime Platform
 
-[![CI](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml/badge.svg)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+[![CI](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml)
+[![Release](https://github.com/justrunme/ai-runtime-platform/actions/workflows/release.yaml/badge.svg)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/release.yaml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0B7285.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB.svg)](pyproject.toml)
+[![FastAPI](https://img.shields.io/badge/FastAPI-gateway-009688.svg)](app/gateway/main.py)
+[![OpenAI API](https://img.shields.io/badge/OpenAI--compatible-chat%20completions-111827.svg)](docs/runtime-decision-engine.md)
+[![vLLM](https://img.shields.io/badge/vLLM-GPU%20serving-5B5FC7.svg)](charts/vllm-runtime)
+[![KServe](https://img.shields.io/badge/KServe-InferenceService-326CE5.svg)](deploy/kserve/qwen-inferenceservice.yaml)
+[![KEDA](https://img.shields.io/badge/KEDA-queue%20autoscaling-1E88E5.svg)](deploy/keda/vllm-scaledobject.yaml)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces%20%2B%20metrics-F5A800.svg)](deploy/observability/otel-collector.yaml)
+[![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
+[![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
 > Service-mesh style runtime for private LLM inference with an OpenAI-compatible gateway, policy-based routing, vLLM, KServe, KEDA, OpenTelemetry and GitOps.
 
 This repository demonstrates the runtime decision layer of an AI platform: receiving an OpenAI-compatible request, evaluating model health, latency, cost and route policy, selecting the best backend, and emitting operations-grade telemetry. It deliberately does not present a model governance control plane.
+
+## Platform Signals
+
+| Runtime path | Production controls | Operational evidence |
+| --- | --- | --- |
+| OpenAI-compatible FastAPI gateway | Health-aware, fallback, canary, and cost-aware routing | Animated routing demos and local response captures |
+| vLLM and KServe serving examples | GPU scheduling, probes, ServiceMonitor, KEDA queue scaling | Helm, Kustomize, kubeconform, and Docker CI gates |
+| OpenTelemetry and Prometheus metrics | Request IDs, traces, routing labels, fallback and cost metrics | Grafana dashboard, OTLP collector, signed release image |
 
 ## Architecture at a glance
 
