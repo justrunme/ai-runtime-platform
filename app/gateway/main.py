@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.gateway.decisions import DecisionRecord, DecisionStore, create_decision_store
 from app.gateway.governance import GovernanceConfig, enforce_governance
+from app.gateway.tenant import TenantAttributionStore
 
 
 CHAT_REQUESTS = Counter(
@@ -697,6 +698,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
     app.state.governance = GovernanceConfig.from_environment()
+    app.state.tenant_attribution = (
+        TenantAttributionStore() if TenantAttributionStore.enabled_from_environment() else None
+    )
     health_task = asyncio.create_task(
         health_probe_loop(app.state.backend_health, settings.health_interval_seconds)
     )
@@ -848,6 +852,24 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     settings: GatewaySettings = request.app.state.settings
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     governance: GovernanceConfig | None = request.app.state.governance
+    tenant_store: TenantAttributionStore | None = getattr(
+        request.app.state, "tenant_attribution", None
+    )
+    requests_last_minute: int | None = None
+    tokens_today: int | None = None
+    if tenant_store is not None:
+        team = tenant_store.resolve_team(request)
+        input_tokens, output_tokens = 0, 0
+        messages = payload.get("messages")
+        if isinstance(messages, list):
+            for message in messages:
+                if isinstance(message, dict) and isinstance(message.get("content"), str):
+                    input_tokens += max(1, len(message["content"]) // 4)
+        output_tokens = int(payload.get("max_tokens") or min(input_tokens or 1, 512))
+        tenant_store.record_request(
+            team, input_tokens=input_tokens or 1, output_tokens=output_tokens
+        )
+        requests_last_minute, tokens_today = tenant_store.usage_snapshot(team)
     if governance is not None:
         await enforce_governance(
             request.app.state.client,
@@ -855,6 +877,8 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             request,
             payload,
             settings.model_targets,
+            requests_last_minute=requests_last_minute,
+            tokens_today=tokens_today,
         )
     route = settings.model_routes.get(requested_model)
     model, fallback_model = resolve_route(route, request_id, requested_model)

@@ -1,0 +1,29 @@
+{
+  "input_source": "experiments/canary-analysis/sample_metrics.csv",
+  "thresholds": {
+    "max_latency_regression_pct": 10.0,
+    "max_error_regression_pct": 5.0,
+    "max_cost_regression_pct": 15.0,
+    "min_latency_improvement_pct": 5.0
+  },
+  "recommendation_counts": {
+    "promote": 0,
+    "hold": 1,
+    "rollback": 1
+  },
+  "analyses": [
+    {
+      "primary_model": "qwen2.5:1.5b",
+      "canary_model": "llama3.2:1b",
+      "sample_requests": 1200.0,
+      "promote": false,
+      "recommendation": "rollback",
+      "reason": "canary p95 latency +32.38%, cost +17.86%",
+      "deltas": {
+        "p95_latency_pct": 32.38,
+        "error_rate_pct": 25.0,
+        "cost_pct": 17.86
+      }
+    }
+  ]
+}
