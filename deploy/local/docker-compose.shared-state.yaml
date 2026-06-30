@@ -1,0 +1,25 @@
+# Shared-state overlay: routes from a Redis-backed health store so multiple
+# gateway replicas make consistent health/cost decisions.
+#
+#   docker compose \
+#     -f deploy/local/docker-compose.yaml \
+#     -f deploy/local/docker-compose.shared-state.yaml \
+#     up --build
+services:
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
