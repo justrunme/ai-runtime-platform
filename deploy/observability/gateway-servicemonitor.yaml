@@ -1,0 +1,17 @@
+# Requires the Prometheus Operator. Apply after deploy/base so the gateway
+# Service exists. Scrapes the gateway's own routing/cost/fallback metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ai-runtime-gateway
+  namespace: ai-runtime
+  labels:
+    app.kubernetes.io/name: ai-runtime-gateway
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-runtime-gateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

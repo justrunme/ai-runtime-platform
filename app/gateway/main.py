@@ -14,14 +14,38 @@ from dataclasses import dataclass
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+CHAT_REQUESTS = Counter(
+    "gateway_chat_requests_total",
+    "Chat completion requests handled by the gateway, labelled by routing outcome.",
+    ["requested_model", "selected_backend", "routing_reason", "outcome"],
+)
+CHAT_FALLBACKS = Counter(
+    "gateway_chat_fallback_total",
+    "Completions served by a non-primary backend after a reroute or failover.",
+    ["selected_backend", "routing_reason"],
+)
+CHAT_DURATION = Histogram(
+    "gateway_chat_duration_seconds",
+    "End-to-end gateway latency for chat completions.",
+    ["routing_reason"],
+)
+CHAT_COST = Counter(
+    "gateway_chat_estimated_cost_usd_total",
+    "Estimated USD cost attributed from upstream token usage.",
+    ["selected_backend"],
+)
 
 
 class ModelTarget(BaseModel):
@@ -110,6 +134,7 @@ class GatewaySettings(BaseModel):
     model_routes: dict[str, ModelRoute] = Field(default_factory=dict)
     timeout_seconds: float = Field(default=120.0, gt=0)
     health_interval_seconds: float = Field(default=15.0, gt=0)
+    api_keys: frozenset[str] = Field(default_factory=frozenset)
 
     @model_validator(mode="after")
     def route_targets_exist(self) -> "GatewaySettings":
@@ -152,12 +177,15 @@ class GatewaySettings(BaseModel):
                     },
                 )
         raw_routes = os.getenv("MODEL_ROUTES")
+        raw_api_keys = os.getenv("GATEWAY_API_KEYS", "")
+        api_keys = frozenset(key.strip() for key in raw_api_keys.split(",") if key.strip())
         return cls.model_validate(
             {
                 "model_targets": model_targets,
                 "model_routes": json.loads(raw_routes) if raw_routes else {},
                 "timeout_seconds": float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "120")),
                 "health_interval_seconds": float(os.getenv("BACKEND_HEALTH_INTERVAL_SECONDS", "15")),
+                "api_keys": api_keys,
             }
         )
 
@@ -400,9 +428,17 @@ async def post_completion_with_fallback(
     raise RuntimeError("completion routing had no configured attempt")
 
 
+def build_span_exporter() -> SpanExporter:
+    """Export to the OTLP collector when configured, otherwise log spans to the console."""
+    if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") or os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"):
+        return OTLPSpanExporter()
+    return ConsoleSpanExporter()
+
+
 def configure_tracing() -> None:
-    provider = TracerProvider(resource=Resource.create({"service.name": "ai-runtime-gateway"}))
-    provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+    service_name = os.getenv("OTEL_SERVICE_NAME", "ai-runtime-gateway")
+    provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+    provider.add_span_processor(BatchSpanProcessor(build_span_exporter()))
     trace.set_tracer_provider(provider)
 
 
@@ -422,14 +458,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.client.aclose()
 
 
+PUBLIC_PATHS = frozenset({"/healthz", "/metrics"})
+
+
+def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
+    """Accept a bearer token or x-api-key header against the configured key set."""
+    header = request.headers.get("authorization", "")
+    if header.startswith("Bearer "):
+        if header.removeprefix("Bearer ").strip() in api_keys:
+            return True
+    return request.headers.get("x-api-key", "") in api_keys
+
+
 configure_tracing()
 app = FastAPI(title="AI Runtime Gateway", version="0.1.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 
 
+@app.middleware("http")
+async def enforce_api_key(request: Request, call_next):
+    """Require an API key for application routes when GATEWAY_API_KEYS is configured."""
+    settings: GatewaySettings | None = getattr(request.app.state, "settings", None)
+    api_keys = settings.api_keys if settings else frozenset()
+    if api_keys and request.url.path not in PUBLIC_PATHS and not request_is_authorized(request, api_keys):
+        return JSONResponse({"detail": "missing or invalid API key"}, status_code=401)
+    return await call_next(request)
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/v1/models")
@@ -471,6 +534,40 @@ async def backend_health(request: Request) -> dict[str, object]:
     return {"backends": await request.app.state.backend_health.snapshot()}
 
 
+def routing_reason(*, cost_rerouted: bool, health_rerouted: bool, fallback_used: bool) -> str:
+    if cost_rerouted:
+        return "cost_aware"
+    if health_rerouted:
+        return "health_score"
+    if fallback_used:
+        return "fallback"
+    return "primary"
+
+
+def observe_completion(
+    *,
+    requested_model: str | None,
+    selected_backend: str,
+    reason: str,
+    success: bool,
+    fallback_used: bool,
+    duration_s: float,
+    cost: float | None,
+) -> None:
+    """Emit Prometheus signals for a completion attempt, regardless of streaming mode."""
+    CHAT_REQUESTS.labels(
+        requested_model=requested_model or "unknown",
+        selected_backend=selected_backend,
+        routing_reason=reason,
+        outcome="success" if success else "error",
+    ).inc()
+    CHAT_DURATION.labels(routing_reason=reason).observe(duration_s)
+    if fallback_used:
+        CHAT_FALLBACKS.labels(selected_backend=selected_backend, routing_reason=reason).inc()
+    if cost:
+        CHAT_COST.labels(selected_backend=selected_backend).inc(cost)
+
+
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
     payload = await request.json()
@@ -508,6 +605,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         span.set_attribute("gen_ai.operation.name", "chat")
         try:
             if payload.get("stream"):
+                stream_fallback_used = False
                 upstream_url = chat_completions_url(target.url)
                 upstream_request = request.app.state.client.build_request(
                     "POST", upstream_url, json={**payload, "model": model}, headers=headers
@@ -515,7 +613,9 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 upstream = await request.app.state.client.send(upstream_request, stream=True)
                 if upstream.status_code >= 500 and fallback_target is not None and fallback_model is not None:
                     await upstream.aclose()
+                    await request.app.state.backend_health.record_request(model, success=False)
                     model = fallback_model
+                    stream_fallback_used = True
                     upstream_request = request.app.state.client.build_request(
                         "POST",
                         chat_completions_url(fallback_target.url),
@@ -526,6 +626,22 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                     headers["x-fallback-used"] = "true"
                 upstream.raise_for_status()
                 headers["x-selected-backend"] = model
+                fallback_used = stream_fallback_used or health_rerouted or cost_rerouted
+                reason = routing_reason(
+                    cost_rerouted=cost_rerouted, health_rerouted=health_rerouted, fallback_used=stream_fallback_used
+                )
+                await request.app.state.backend_health.record_request(model, success=True, fallback_used=fallback_used)
+                observe_completion(
+                    requested_model=requested_model,
+                    selected_backend=model,
+                    reason=reason,
+                    success=True,
+                    fallback_used=fallback_used,
+                    duration_s=time.monotonic() - started_at,
+                    cost=None,
+                )
+                span.set_attribute("ai.runtime.routing_reason", reason)
+                span.set_attribute("ai.runtime.selected_backend", model)
                 return StreamingResponse(
                     upstream.aiter_bytes(),
                     status_code=upstream.status_code,
@@ -549,20 +665,27 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             )
         except httpx.HTTPError as error:
             span.record_exception(error)
+            await request.app.state.backend_health.record_request(model, success=False)
+            observe_completion(
+                requested_model=requested_model,
+                selected_backend=model,
+                reason=routing_reason(
+                    cost_rerouted=cost_rerouted, health_rerouted=health_rerouted, fallback_used=False
+                ),
+                success=False,
+                fallback_used=False,
+                duration_s=time.monotonic() - started_at,
+                cost=None,
+            )
             raise HTTPException(status_code=502, detail="model backend unavailable") from error
 
         response = upstream.json()
+        reason = routing_reason(
+            cost_rerouted=cost_rerouted, health_rerouted=health_rerouted, fallback_used=fallback_used
+        )
         response["selected_backend"] = model
         response["fallback_used"] = fallback_used or health_rerouted or cost_rerouted
-        response["routing_reason"] = (
-            "cost_aware"
-            if cost_rerouted
-            else "health_score"
-            if health_rerouted
-            else "fallback"
-            if fallback_used
-            else "primary"
-        )
+        response["routing_reason"] = reason
         health_score, _, _ = await request.app.state.backend_health.routing_signal(model)
         response["health_score"] = health_score
         estimated_cost = request_cost(response.get("usage"), settings.model_targets[model])
@@ -570,5 +693,16 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             response["estimated_cost"] = estimated_cost
             response["runtime_cost"] = {"currency": "USD", "estimated": estimated_cost}
             span.set_attribute("gen_ai.usage.cost_usd", estimated_cost)
+        span.set_attribute("ai.runtime.routing_reason", reason)
+        span.set_attribute("ai.runtime.selected_backend", model)
         span.set_attribute("gen_ai.server.time_to_last_byte_ms", round((time.monotonic() - started_at) * 1000))
+        observe_completion(
+            requested_model=requested_model,
+            selected_backend=model,
+            reason=reason,
+            success=True,
+            fallback_used=response["fallback_used"],
+            duration_s=time.monotonic() - started_at,
+            cost=estimated_cost,
+        )
         return JSONResponse(response, headers=headers)
