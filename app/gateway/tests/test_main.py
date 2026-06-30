@@ -374,3 +374,74 @@ async def test_api_key_is_required_when_configured() -> None:
     assert authorized.status_code == 200
     assert health_open.status_code == 200
     await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_models_and_routes_endpoints_expose_configuration() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    upstream = _bootstrap_app_state(handler)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        models = (await client.get("/v1/models")).json()
+        routes = (await client.get("/v1/routes")).json()
+    model_ids = {entry["id"] for entry in models["data"]}
+    assert {"qwen", "llama", "small-chat"} <= model_ids
+    small_chat = next(route for route in routes["data"] if route["id"] == "small-chat")
+    assert small_chat["policy"] == "failover"
+    await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_metrics_endpoint_exposes_gateway_series() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    upstream = _bootstrap_app_state(handler)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        await client.post("/v1/chat/completions", json={"model": "qwen", "messages": []})
+        metrics = await client.get("/metrics")
+    assert metrics.status_code == 200
+    assert "gateway_chat_requests_total" in metrics.text
+    await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_cost_aware_completion_routes_to_cheaper_backend() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    settings = GatewaySettings(
+        model_targets={
+            "qwen": ModelTarget(
+                url="http://primary", input_cost_per_million=1, output_cost_per_million=1
+            ),
+            "llama": ModelTarget(
+                url="http://fallback", input_cost_per_million=0.1, output_cost_per_million=0.1
+            ),
+        },
+        model_routes={
+            "small-chat": ModelRoute(
+                primary="qwen",
+                fallback="llama",
+                routing_policy=RoutingPolicy(
+                    weights=RoutingWeights(health=0.5, latency=0.3, cost=0.2)
+                ),
+            )
+        },
+    )
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    app.state.settings = settings
+    app.state.client = upstream
+    app.state.backend_health = BackendHealthStore(settings, upstream)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        body = (
+            await client.post("/v1/chat/completions", json={"model": "small-chat", "messages": []})
+        ).json()
+    assert body["selected_backend"] == "llama"
+    assert body["routing_reason"] == "cost_aware"
+    assert body["fallback_used"] is True
+    await upstream.aclose()

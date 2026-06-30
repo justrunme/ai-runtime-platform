@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-runtime-gateway-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+# Visualises the gateway's own routing decisions from /metrics. Pair it with the
+# vLLM runtime dashboard for the full request-to-runtime picture.
+data:
+  ai-runtime-gateway.json: |
+    {
+      "title": "AI Runtime / Gateway Routing",
+      "schemaVersion": 39,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Requests by routing reason",
+          "targets": [{"expr": "sum by (routing_reason) (rate(gateway_chat_requests_total[5m]))", "legendFormat": "{{routing_reason}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Fallback / reroute rate",
+          "targets": [{"expr": "sum by (routing_reason) (rate(gateway_chat_fallback_total[5m]))", "legendFormat": "{{routing_reason}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "P95 gateway latency by routing reason",
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le, routing_reason) (rate(gateway_chat_duration_seconds_bucket[5m])))", "legendFormat": "{{routing_reason}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Error ratio",
+          "targets": [{"expr": "sum(rate(gateway_chat_requests_total{outcome=\"error\"}[5m])) / clamp_min(sum(rate(gateway_chat_requests_total[5m])), 1)", "legendFormat": "error ratio"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Estimated cost rate (USD/s) by backend",
+          "targets": [{"expr": "sum by (selected_backend) (rate(gateway_chat_estimated_cost_usd_total[5m]))", "legendFormat": "{{selected_backend}}"}]
+        }
+      ]
+    }
