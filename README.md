@@ -263,7 +263,15 @@ curl http://localhost:8080/v1/backends/health
 }
 ```
 
-The current store is in-memory per gateway replica, which is deliberate for the MVP. The gateway now exports request, fallback, latency, and cost signals through `/metrics`, but each replica still scores and routes from its own local view. A horizontally scaled production gateway should drive routing from the shared Prometheus aggregate before treating these decisions as fleet-wide.
+The store is in-memory per gateway replica by default. Set `REDIS_URL` to switch every replica to a shared Redis-backed store, so probe availability and request/error/fallback counters aggregate across the fleet and all replicas route from the same view. Request counters are incremented atomically (`HINCRBY`), which makes error and fallback rates fleet-wide rather than per-replica. The gateway also exports these signals through `/metrics` for dashboards and alerting.
+
+```sh
+# Local shared-state demo (Redis + gateway)
+docker compose \
+  -f deploy/local/docker-compose.yaml \
+  -f deploy/local/docker-compose.shared-state.yaml \
+  up --build
+```
 
 ## Health-aware routing
 
@@ -295,7 +303,7 @@ When both failover backends are healthy, a balanced policy ranks them by health,
 }
 ```
 
-The gateway picks the highest weighted score and returns `routing_reason: "cost_aware"`, `selected_backend`, `health_score`, and `estimated_cost`. This is an in-memory, per-replica decision for the MVP; use shared Prometheus/telemetry signals before treating the policy as globally consistent at scale.
+The gateway picks the highest weighted score and returns `routing_reason: "cost_aware"`, `selected_backend`, `health_score`, and `estimated_cost`. By default this is a per-replica decision; set `REDIS_URL` to make the underlying health signals fleet-wide and the policy globally consistent across replicas.
 
 ## Benchmark
 
@@ -331,10 +339,10 @@ docs/                 Architecture and operational decisions
 
 1. Extend the shared-key auth into Envoy AI Gateway policies, per-tenant API keys, rate limits, and JWT/OIDC authentication.
 2. Add Ray Serve LLM as a multi-model/pipeline deployment profile.
-3. Build a Grafana dashboard and SLO recording rules on the exported gateway metrics for TTFT, TPOT, queue depth, and error budget.
+3. Add SLO recording rules and alerts on the exported gateway and vLLM metrics for TTFT, TPOT, queue depth, and error budget (dashboards already ship in `deploy/observability`).
 4. Add canary analysis gates and rollback based on live latency/error signals.
 5. Add a reproducible benchmark report for a named GPU/model/version profile.
 
 ## Security note
 
-No production secret, token, model licence acceptance, or cloud credential belongs in this repository. Supply them through the cluster's secret-management and workload-identity mechanism.
+No production secret, token, model licence acceptance, or cloud credential belongs in this repository. Supply them through the cluster's secret-management and workload-identity mechanism. Released images are signed with cosign, scanned with Trivy, and published with an SBOM; see [SECURITY.md](SECURITY.md) for verification and reporting.

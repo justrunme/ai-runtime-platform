@@ -11,6 +11,10 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from redis.asyncio import Redis
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -137,6 +141,7 @@ class GatewaySettings(BaseModel):
     timeout_seconds: float = Field(default=120.0, gt=0)
     health_interval_seconds: float = Field(default=15.0, gt=0)
     api_keys: frozenset[str] = Field(default_factory=frozenset)
+    redis_url: str | None = None
 
     @model_validator(mode="after")
     def route_targets_exist(self) -> "GatewaySettings":
@@ -196,6 +201,7 @@ class GatewaySettings(BaseModel):
                     os.getenv("BACKEND_HEALTH_INTERVAL_SECONDS", "15")
                 ),
                 "api_keys": api_keys,
+                "redis_url": os.getenv("REDIS_URL") or None,
             }
         )
 
@@ -256,14 +262,27 @@ class BackendHealth:
         return self.fallback_count / self.request_count if self.request_count else 0.0
 
 
-class BackendHealthStore:
-    """In-memory health signals for one gateway replica."""
+def _format_health_row(model: str, target: ModelTarget, health: BackendHealth) -> dict[str, object]:
+    status = (
+        "healthy" if health.available else "unhealthy" if health.available is False else "unknown"
+    )
+    return {
+        "name": target.backend_name or model,
+        "model": model,
+        "status": status,
+        "score": health.score(),
+        "latency_ms": health.latency_ms,
+        "error_rate": round(health.error_rate, 4),
+        "fallback_rate": round(health.fallback_rate, 4),
+    }
+
+
+class HealthStore:
+    """Base store: probing is shared, persistence is implementation-specific."""
 
     def __init__(self, settings: GatewaySettings, client: httpx.AsyncClient) -> None:
         self._settings = settings
         self._client = client
-        self._health = {model: BackendHealth() for model in settings.model_targets}
-        self._lock = asyncio.Lock()
 
     async def probe_all(self) -> None:
         await asyncio.gather(
@@ -280,6 +299,46 @@ class BackendHealthStore:
         except httpx.RequestError:
             available = False
         latency_ms = round((time.monotonic() - started_at) * 1000, 2)
+        await self._store_probe(model, available, latency_ms)
+
+    async def snapshot(self) -> list[dict[str, object]]:
+        return [
+            _format_health_row(model, target, await self._load(model))
+            for model, target in self._settings.model_targets.items()
+        ]
+
+    async def meets_score(self, model: str, threshold: int) -> bool:
+        health = await self._load(model)
+        return health.available is not False and health.score() >= threshold
+
+    async def routing_signal(self, model: str) -> tuple[int, float | None, bool | None]:
+        health = await self._load(model)
+        return health.score(), health.latency_ms, health.available
+
+    async def aclose(self) -> None:
+        return None
+
+    async def _store_probe(self, model: str, available: bool, latency_ms: float) -> None:
+        raise NotImplementedError
+
+    async def record_request(
+        self, model: str, *, success: bool, fallback_used: bool = False
+    ) -> None:
+        raise NotImplementedError
+
+    async def _load(self, model: str) -> BackendHealth:
+        raise NotImplementedError
+
+
+class BackendHealthStore(HealthStore):
+    """In-memory health signals scoped to one gateway replica."""
+
+    def __init__(self, settings: GatewaySettings, client: httpx.AsyncClient) -> None:
+        super().__init__(settings, client)
+        self._health = {model: BackendHealth() for model in settings.model_targets}
+        self._lock = asyncio.Lock()
+
+    async def _store_probe(self, model: str, available: bool, latency_ms: float) -> None:
         async with self._lock:
             self._health[model].available = available
             self._health[model].latency_ms = latency_ms
@@ -293,38 +352,72 @@ class BackendHealthStore:
             health.error_count += int(not success)
             health.fallback_count += int(fallback_used)
 
-    async def snapshot(self) -> list[dict[str, object]]:
+    async def _load(self, model: str) -> BackendHealth:
         async with self._lock:
-            return [
-                {
-                    "name": target.backend_name or model,
-                    "model": model,
-                    "status": "healthy"
-                    if health.available
-                    else "unhealthy"
-                    if health.available is False
-                    else "unknown",
-                    "score": health.score(),
-                    "latency_ms": health.latency_ms,
-                    "error_rate": round(health.error_rate, 4),
-                    "fallback_rate": round(health.fallback_rate, 4),
-                }
-                for model, target in self._settings.model_targets.items()
-                for health in [self._health[model]]
-            ]
-
-    async def meets_score(self, model: str, threshold: int) -> bool:
-        async with self._lock:
-            health = self._health[model]
-            return health.available is not False and health.score() >= threshold
-
-    async def routing_signal(self, model: str) -> tuple[int, float | None, bool | None]:
-        async with self._lock:
-            health = self._health[model]
-            return health.score(), health.latency_ms, health.available
+            current = self._health[model]
+            return BackendHealth(
+                available=current.available,
+                latency_ms=current.latency_ms,
+                request_count=current.request_count,
+                error_count=current.error_count,
+                fallback_count=current.fallback_count,
+            )
 
 
-async def health_probe_loop(store: BackendHealthStore, interval_seconds: float) -> None:
+class RedisHealthStore(HealthStore):
+    """Fleet-wide health signals shared by all gateway replicas through Redis."""
+
+    def __init__(self, settings: GatewaySettings, client: httpx.AsyncClient, redis: Redis) -> None:
+        super().__init__(settings, client)
+        self._redis = redis
+
+    @staticmethod
+    def _key(model: str) -> str:
+        return f"arp:health:{model}"
+
+    async def _store_probe(self, model: str, available: bool, latency_ms: float) -> None:
+        await self._redis.hset(
+            self._key(model),
+            mapping={"available": "1" if available else "0", "latency_ms": latency_ms},
+        )
+
+    async def record_request(
+        self, model: str, *, success: bool, fallback_used: bool = False
+    ) -> None:
+        pipe = self._redis.pipeline()
+        pipe.hincrby(self._key(model), "request_count", 1)
+        pipe.hincrby(self._key(model), "error_count", int(not success))
+        pipe.hincrby(self._key(model), "fallback_count", int(fallback_used))
+        await pipe.execute()
+
+    async def _load(self, model: str) -> BackendHealth:
+        data = await self._redis.hgetall(self._key(model))
+        available_raw = data.get("available")
+        available = None if available_raw is None else available_raw == "1"
+        latency_raw = data.get("latency_ms")
+        return BackendHealth(
+            available=available,
+            latency_ms=float(latency_raw) if latency_raw not in (None, "") else None,
+            request_count=int(data.get("request_count", 0)),
+            error_count=int(data.get("error_count", 0)),
+            fallback_count=int(data.get("fallback_count", 0)),
+        )
+
+    async def aclose(self) -> None:
+        await self._redis.aclose()
+
+
+def create_health_store(settings: GatewaySettings, client: httpx.AsyncClient) -> HealthStore:
+    """Use Redis for fleet-wide routing state when REDIS_URL is set, else in-memory."""
+    if settings.redis_url:
+        from redis.asyncio import Redis
+
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        return RedisHealthStore(settings, client, redis)
+    return BackendHealthStore(settings, client)
+
+
+async def health_probe_loop(store: HealthStore, interval_seconds: float) -> None:
     while True:
         await store.probe_all()
         await asyncio.sleep(interval_seconds)
@@ -362,7 +455,7 @@ async def select_health_aware_backend(
     route: ModelRoute | None,
     primary_model: str,
     fallback_model: str | None,
-    health_store: BackendHealthStore,
+    health_store: HealthStore,
 ) -> tuple[str, bool]:
     """Skip an unhealthy primary before issuing an inference request."""
     if route is None or route.min_health_score is None:
@@ -380,7 +473,7 @@ async def select_cost_aware_backend(
     route: ModelRoute | None,
     primary_model: str,
     fallback_model: str | None,
-    health_store: BackendHealthStore,
+    health_store: HealthStore,
     model_targets: dict[str, ModelTarget],
 ) -> tuple[str, bool]:
     """Choose the best healthy failover target using health, latency, and unit cost."""
@@ -479,7 +572,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = GatewaySettings.from_environment()
     app.state.settings = settings
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
-    app.state.backend_health = BackendHealthStore(settings, app.state.client)
+    app.state.backend_health = create_health_store(settings, app.state.client)
     health_task = asyncio.create_task(
         health_probe_loop(app.state.backend_health, settings.health_interval_seconds)
     )
@@ -489,6 +582,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         health_task.cancel()
         with suppress(asyncio.CancelledError):
             await health_task
+        await app.state.backend_health.aclose()
         await app.state.client.aclose()
 
 

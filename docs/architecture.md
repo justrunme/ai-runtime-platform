@@ -100,7 +100,7 @@ The current gateway reads policy from configuration. The next platform step is a
 
 ## Operational boundaries
 
-- The health store is intentionally in-memory per gateway replica. It is suitable for the demo and a single replica; fleet-wide decisions require shared metrics or telemetry aggregation.
+- The health store is in-memory per gateway replica by default, which suits the demo and a single replica. Set `REDIS_URL` to share health and request signals across replicas through Redis so routing decisions are fleet-wide and consistent.
 - Cost is request attribution from token usage and configured unit rates. It is not cloud billing.
 - Canary traffic allocation is not canary analysis. Promotion still needs comparable SLO and quality evidence.
 - KServe, vLLM, KEDA, and Argo CD manifests are production profiles. They are not applied by the local Docker demo.

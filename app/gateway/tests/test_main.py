@@ -1,18 +1,22 @@
 from types import SimpleNamespace
 
+import fakeredis.aioredis
 import pytest
 import httpx
 
 from app.gateway.main import (
     GatewaySettings,
     BackendHealthStore,
+    HealthStore,
     ModelRoute,
     ModelTarget,
     NoHealthyBackendError,
+    RedisHealthStore,
     RouteTarget,
     RoutingPolicy,
     RoutingWeights,
     app,
+    create_health_store,
     chat_completions_url,
     post_completion_with_fallback,
     request_cost,
@@ -445,3 +449,52 @@ async def test_cost_aware_completion_routes_to_cheaper_backend() -> None:
     assert body["routing_reason"] == "cost_aware"
     assert body["fallback_used"] is True
     await upstream.aclose()
+
+
+def _shared_settings(**overrides) -> GatewaySettings:
+    return GatewaySettings(
+        model_targets={
+            "qwen": ModelTarget(
+                url="http://primary",
+                backend_name="qwen-local",
+                input_cost_per_million=0,
+                output_cost_per_million=0,
+            ),
+            "llama": ModelTarget(
+                url="http://fallback", input_cost_per_million=0, output_cost_per_million=0
+            ),
+        },
+        **overrides,
+    )
+
+
+@pytest.mark.anyio
+async def test_redis_health_store_is_shared_across_replicas() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request)
+
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    settings = _shared_settings()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        replica_a = RedisHealthStore(settings, client, redis)
+        replica_b = RedisHealthStore(settings, client, redis)
+        await replica_a.probe_all()
+        await replica_a.record_request("qwen", success=True)
+        await replica_a.record_request("qwen", success=False, fallback_used=True)
+        snapshot = {row["model"]: row for row in await replica_b.snapshot()}
+        assert snapshot["qwen"]["status"] == "healthy"
+        assert snapshot["qwen"]["error_rate"] == 0.5
+        assert snapshot["qwen"]["fallback_rate"] == 0.5
+        assert await replica_b.meets_score("qwen", 50) is True
+    await redis.aclose()
+
+
+@pytest.mark.anyio
+async def test_create_health_store_selects_backend_by_redis_url() -> None:
+    async with httpx.AsyncClient() as client:
+        in_memory = create_health_store(_shared_settings(), client)
+        assert isinstance(in_memory, BackendHealthStore)
+        assert isinstance(in_memory, HealthStore)
+        shared = create_health_store(_shared_settings(redis_url="redis://localhost:6379/0"), client)
+        assert isinstance(shared, RedisHealthStore)
+        await shared.aclose()
