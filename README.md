@@ -1,5 +1,9 @@
 # AI Runtime Platform
 
+[![CI](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml/badge.svg)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
+
 > Service-mesh style runtime for private LLM inference with an OpenAI-compatible gateway, policy-based routing, vLLM, KServe, KEDA, OpenTelemetry and GitOps.
 
 This repository demonstrates the runtime decision layer of an AI platform: receiving an OpenAI-compatible request, evaluating model health, latency, cost and route policy, selecting the best backend, and emitting operations-grade telemetry. It deliberately does not present a model governance control plane.
@@ -188,7 +192,7 @@ The gateway exposes its own Prometheus metrics at `GET /metrics`, independent of
 | `gateway_chat_duration_seconds` | histogram | `routing_reason` |
 | `gateway_chat_estimated_cost_usd_total` | counter | `selected_backend` |
 
-The base deployment carries `prometheus.io/scrape` pod annotations, and `deploy/observability/gateway-servicemonitor.yaml` provides a Prometheus Operator `ServiceMonitor`. Traces are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and fall back to a console exporter locally.
+The base deployment carries `prometheus.io/scrape` pod annotations, and `deploy/observability/gateway-servicemonitor.yaml` provides a Prometheus Operator `ServiceMonitor`. A companion Grafana dashboard for these routing, fallback, latency, and cost series ships in `deploy/observability/gateway-dashboard.yaml`. Traces are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and fall back to a console exporter locally.
 
 ## Canary model rollout
 

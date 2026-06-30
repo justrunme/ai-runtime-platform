@@ -9,14 +9,50 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
-      - uses: azure/setup-helm@v4
-      - uses: azure/setup-kubectl@v4
       - run: pip install -e '.[dev]'
-      - run: make validate
+      - run: python -m ruff check app
+      - run: python -m ruff format --check app
+      - run: python -m pytest
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4.2.0
+      - uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f # v4.0.0
+      - name: Install kubeconform
+        run: |
+          curl -sSLo kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xf kubeconform.tar.gz
+          sudo install kubeconform /usr/local/bin/
+      - name: Helm lint
+        run: helm lint charts/vllm-runtime
+      - name: Validate rendered chart
+        run: helm template qwen charts/vllm-runtime | kubeconform -strict -ignore-missing-schemas -summary
+      - name: Validate kustomize base
+        run: kubectl kustomize deploy/base | kubeconform -strict -ignore-missing-schemas -summary
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+      - uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+      - uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: .
+          push: false
+          tags: ai-runtime-gateway:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
