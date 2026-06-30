@@ -37,6 +37,11 @@ data:
           "type": "timeseries",
           "title": "Estimated cost rate (USD/s) by backend",
           "targets": [{"expr": "sum by (selected_backend) (rate(gateway_chat_estimated_cost_usd_total[5m]))", "legendFormat": "{{selected_backend}}"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Shadow traffic rate by backend",
+          "targets": [{"expr": "sum by (shadow_backend, outcome) (rate(gateway_chat_shadow_total[5m]))", "legendFormat": "{{shadow_backend}} {{outcome}}"}]
         }
       ]
     }

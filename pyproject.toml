@@ -31,6 +31,9 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[project.scripts]
+arp = "app.cli.replay:main"
+
 [tool.pytest.ini_options]
 testpaths = ["app/gateway/tests"]
 markers = ["anyio: run the test on the configured anyio backend"]

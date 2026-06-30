@@ -84,7 +84,26 @@ curl http://localhost:8080/v1/chat/completions \
   -d '{"model":"small-chat-canary","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-The same `X-Request-ID` always resolves to the same model for this route. This makes retries stable; use distinct request IDs to observe the weighted distribution.
+The same `X-Request-ID` always resolves to the same model for this route. This makes retries stable; use distinct request IDs to observe the weighted distribution. The canary overlay also sets `"shadow":"llama3.2:1b"` so stable traffic is mirrored to the canary for comparison metrics.
+
+## Run the local chaos profile
+
+The chaos overlay simulates a dead primary and runs a `chaos-monkey` sidecar that repeatedly calls the failover route:
+
+```sh
+docker compose \
+  -f deploy/local/docker-compose.yaml \
+  -f deploy/local/docker-compose.chaos.yaml \
+  up --build --force-recreate
+```
+
+After a request, replay the routing decision:
+
+```sh
+arp replay --request-id chaos-<timestamp> --gateway http://localhost:8080
+```
+
+Use the `x-request-id` value printed in the chaos-monkey logs.
 
 ## Run the local fallback profile
 

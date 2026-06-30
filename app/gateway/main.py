@@ -29,6 +29,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.gateway.decisions import DecisionRecord, DecisionStore, create_decision_store
+
 
 CHAT_REQUESTS = Counter(
     "gateway_chat_requests_total",
@@ -49,6 +51,16 @@ CHAT_COST = Counter(
     "gateway_chat_estimated_cost_usd_total",
     "Estimated USD cost attributed from upstream token usage.",
     ["selected_backend"],
+)
+CHAT_SHADOW = Counter(
+    "gateway_chat_shadow_total",
+    "Fire-and-forget shadow requests sent to a canary backend for comparison.",
+    ["shadow_backend", "outcome"],
+)
+CHAT_SHADOW_DURATION = Histogram(
+    "gateway_chat_shadow_duration_seconds",
+    "Latency of shadow requests that do not affect the client response.",
+    ["shadow_backend"],
 )
 
 
@@ -101,6 +113,7 @@ class ModelRoute(BaseModel):
     min_health_score: int | None = Field(default=None, ge=0, le=100)
     unhealthy_action: str = "skip"
     routing_policy: RoutingPolicy | None = None
+    shadow: str | None = None
 
     @model_validator(mode="after")
     def has_valid_policy(self) -> "ModelRoute":
@@ -124,6 +137,8 @@ class ModelRoute(BaseModel):
             raise ValueError("unsupported unhealthy action")
         if self.routing_policy is not None and not is_failover:
             raise ValueError("cost-aware routing requires a primary and fallback policy")
+        if self.shadow is not None and self.shadow not in self.model_names():
+            raise ValueError("shadow must reference a model configured on the route")
         return self
 
     def model_names(self) -> list[str]:
@@ -447,6 +462,112 @@ def resolve_route(
     return select_route_target(route, request_id, route_name), None
 
 
+def resolve_shadow_backend(route: ModelRoute | None, selected_model: str) -> str | None:
+    """Mirror stable traffic to the configured canary without serving its response."""
+    if route is None or route.shadow is None or route.shadow == selected_model:
+        return None
+    return route.shadow
+
+
+async def run_shadow_request(
+    client: httpx.AsyncClient,
+    payload: dict[str, object],
+    headers: dict[str, str],
+    shadow_model: str,
+    shadow_target: ModelTarget,
+    timeout_seconds: float,
+) -> tuple[str, float]:
+    """Send a fire-and-forget copy of the request to the shadow backend."""
+    shadow_headers = {**headers, "x-shadow-traffic": "true"}
+    shadow_payload: dict[str, object] = {**payload, "model": shadow_model, "stream": False}
+    if "max_tokens" not in shadow_payload:
+        shadow_payload["max_tokens"] = 64
+    started_at = time.monotonic()
+    try:
+        response = await client.post(
+            chat_completions_url(shadow_target.url),
+            json=shadow_payload,
+            headers=shadow_headers,
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        outcome = "success"
+    except httpx.HTTPError:
+        outcome = "error"
+    duration_s = time.monotonic() - started_at
+    CHAT_SHADOW.labels(shadow_backend=shadow_model, outcome=outcome).inc()
+    CHAT_SHADOW_DURATION.labels(shadow_backend=shadow_model).observe(duration_s)
+    return outcome, round(duration_s * 1000, 2)
+
+
+async def complete_shadow_traffic(
+    store: DecisionStore,
+    request_id: str,
+    client: httpx.AsyncClient,
+    payload: dict[str, object],
+    headers: dict[str, str],
+    shadow_model: str,
+    shadow_target: ModelTarget,
+    timeout_seconds: float,
+) -> None:
+    outcome, duration_ms = await run_shadow_request(
+        client, payload, headers, shadow_model, shadow_target, timeout_seconds
+    )
+    await store.patch_shadow(request_id, outcome=outcome, duration_ms=duration_ms)
+
+
+def schedule_shadow_traffic(
+    store: DecisionStore,
+    client: httpx.AsyncClient,
+    payload: dict[str, object],
+    headers: dict[str, str],
+    request_id: str,
+    shadow_model: str,
+    shadow_target: ModelTarget,
+    timeout_seconds: float,
+) -> None:
+    asyncio.create_task(
+        complete_shadow_traffic(
+            store,
+            request_id,
+            client,
+            payload,
+            headers,
+            shadow_model,
+            shadow_target,
+            timeout_seconds,
+        )
+    )
+
+
+async def record_decision(
+    store: DecisionStore,
+    *,
+    request_id: str,
+    requested_model: str | None,
+    selected_backend: str,
+    routing_reason: str,
+    fallback_used: bool,
+    health_score: int | None,
+    duration_ms: float,
+    shadow_backend: str | None = None,
+    estimated_cost: float | None = None,
+) -> None:
+    await store.put(
+        DecisionRecord(
+            request_id=request_id,
+            requested_model=requested_model or "unknown",
+            selected_backend=selected_backend,
+            routing_reason=routing_reason,
+            fallback_used=fallback_used,
+            health_score=health_score,
+            duration_ms=duration_ms,
+            shadow_backend=shadow_backend,
+            estimated_cost=estimated_cost,
+        )
+    )
+
+
 class NoHealthyBackendError(Exception):
     """Raised when a health-aware route has no eligible backend."""
 
@@ -573,6 +694,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
     app.state.backend_health = create_health_store(settings, app.state.client)
+    app.state.decision_store = create_decision_store(settings.redis_url)
     health_task = asyncio.create_task(
         health_probe_loop(app.state.backend_health, settings.health_interval_seconds)
     )
@@ -583,6 +705,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         with suppress(asyncio.CancelledError):
             await health_task
         await app.state.backend_health.aclose()
+        await app.state.decision_store.aclose()
         await app.state.client.aclose()
 
 
@@ -656,6 +779,7 @@ async def list_routes(request: Request) -> dict[str, object]:
                 "routing_policy": route.routing_policy.model_dump()
                 if route.routing_policy
                 else None,
+                "shadow": route.shadow,
                 "targets": [target.model_dump() for target in route.targets]
                 if route.primary is None
                 else [
@@ -671,6 +795,14 @@ async def list_routes(request: Request) -> dict[str, object]:
 @app.get("/v1/backends/health")
 async def backend_health(request: Request) -> dict[str, object]:
     return {"backends": await request.app.state.backend_health.snapshot()}
+
+
+@app.get("/v1/decisions/{request_id}")
+async def get_decision(request: Request, request_id: str) -> dict[str, object]:
+    record = await request.app.state.decision_store.get(request_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="routing decision not found")
+    return record.to_dict()
 
 
 def routing_reason(*, cost_rerouted: bool, health_rerouted: bool, fallback_used: bool) -> str:
@@ -738,6 +870,9 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     if target is None:
         raise HTTPException(status_code=404, detail=f"unknown model or route: {requested_model}")
 
+    shadow_model = resolve_shadow_backend(route, model)
+    shadow_target = settings.model_targets.get(shadow_model) if shadow_model else None
+
     started_at = time.monotonic()
     headers = {"x-request-id": request_id}
     fallback_target = settings.model_targets.get(fallback_model) if fallback_model else None
@@ -793,6 +928,30 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 )
                 span.set_attribute("ai.runtime.routing_reason", reason)
                 span.set_attribute("ai.runtime.selected_backend", model)
+                if shadow_model and shadow_target:
+                    schedule_shadow_traffic(
+                        request.app.state.decision_store,
+                        request.app.state.client,
+                        payload,
+                        headers,
+                        request_id,
+                        shadow_model,
+                        shadow_target,
+                        settings.timeout_seconds,
+                    )
+                    headers["x-shadow-backend"] = shadow_model
+                    span.set_attribute("ai.runtime.shadow_backend", shadow_model)
+                await record_decision(
+                    request.app.state.decision_store,
+                    request_id=request_id,
+                    requested_model=requested_model,
+                    selected_backend=model,
+                    routing_reason=reason,
+                    fallback_used=fallback_used,
+                    health_score=(await request.app.state.backend_health.routing_signal(model))[0],
+                    duration_ms=round((time.monotonic() - started_at) * 1000, 2),
+                    shadow_backend=shadow_model,
+                )
                 return StreamingResponse(
                     upstream.aiter_bytes(),
                     status_code=upstream.status_code,
@@ -817,18 +976,29 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         except httpx.HTTPError as error:
             span.record_exception(error)
             await request.app.state.backend_health.record_request(model, success=False)
+            reason = routing_reason(
+                cost_rerouted=cost_rerouted,
+                health_rerouted=health_rerouted,
+                fallback_used=False,
+            )
             observe_completion(
                 requested_model=requested_model,
                 selected_backend=model,
-                reason=routing_reason(
-                    cost_rerouted=cost_rerouted,
-                    health_rerouted=health_rerouted,
-                    fallback_used=False,
-                ),
+                reason=reason,
                 success=False,
                 fallback_used=False,
                 duration_s=time.monotonic() - started_at,
                 cost=None,
+            )
+            await record_decision(
+                request.app.state.decision_store,
+                request_id=request_id,
+                requested_model=requested_model,
+                selected_backend=model,
+                routing_reason=reason,
+                fallback_used=False,
+                health_score=(await request.app.state.backend_health.routing_signal(model))[0],
+                duration_ms=round((time.monotonic() - started_at) * 1000, 2),
             )
             raise HTTPException(status_code=502, detail="model backend unavailable") from error
 
@@ -861,5 +1031,30 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             fallback_used=response["fallback_used"],
             duration_s=time.monotonic() - started_at,
             cost=estimated_cost,
+        )
+        if shadow_model and shadow_target:
+            schedule_shadow_traffic(
+                request.app.state.decision_store,
+                request.app.state.client,
+                payload,
+                headers,
+                request_id,
+                shadow_model,
+                shadow_target,
+                settings.timeout_seconds,
+            )
+            response["shadow_backend"] = shadow_model
+            span.set_attribute("ai.runtime.shadow_backend", shadow_model)
+        await record_decision(
+            request.app.state.decision_store,
+            request_id=request_id,
+            requested_model=requested_model,
+            selected_backend=model,
+            routing_reason=reason,
+            fallback_used=response["fallback_used"],
+            health_score=health_score,
+            duration_ms=round((time.monotonic() - started_at) * 1000, 2),
+            shadow_backend=shadow_model,
+            estimated_cost=estimated_cost,
         )
         return JSONResponse(response, headers=headers)
