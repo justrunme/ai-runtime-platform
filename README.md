@@ -94,6 +94,17 @@ This repository is the **Execution Plane** of the [AI Infrastructure OS](https:/
 
 The Execution Plane runs workloads and enforces Control Plane verdicts via `CONTROL_PLANE_URL`.
 
+### Full platform demo
+
+Run the combined stack from [ai-infra-control-plane/demo/platform](https://github.com/justrunme/ai-infra-control-plane/tree/main/demo/platform):
+
+```sh
+# in ai-infra-control-plane checkout
+make platform-demo
+```
+
+Gateway listens on **:8090**, control plane on **:8091**.
+
 ## Local demo evidence
 
 The following snapshots are captured from the CPU-only Ollama + gateway Compose profile. They show the operational signals the gateway exposes to a caller; they are not mocked UI panels.
