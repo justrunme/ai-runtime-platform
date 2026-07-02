@@ -161,6 +161,8 @@ def build_evaluate_payload(
             request.headers.get("x-ai-requests-last-minute", requests_last_minute or 0)
         ),
         "tokens_today": int(request.headers.get("x-ai-tokens-today", tokens_today or 0)),
+        "model_revision": request.headers.get("x-ai-model-revision", "").strip(),
+        "model_artifact_digest": request.headers.get("x-ai-model-digest", "").strip(),
     }
 
 
@@ -194,6 +196,12 @@ async def enforce_governance(
     authorization = request.headers.get("authorization", "").strip()
     if authorization:
         headers["authorization"] = authorization
+    model_digest = request.headers.get("x-ai-model-digest", "").strip()
+    if model_digest:
+        headers["x-ai-model-digest"] = model_digest
+    model_revision = request.headers.get("x-ai-model-revision", "").strip()
+    if model_revision:
+        headers["x-ai-model-revision"] = model_revision
 
     try:
         response = await client.post(

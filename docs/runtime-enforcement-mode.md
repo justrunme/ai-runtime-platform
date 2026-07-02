@@ -55,8 +55,26 @@ The gateway maps OpenAI chat payloads and optional headers into the control plan
 | `x-ai-cost-per-hour-usd` | `cost_per_hour_usd` |
 | `x-ai-month-to-date-cost-usd` | `month_to_date_cost_usd` |
 | `x-ai-forecast-monthly-cost-usd` | `forecast_monthly_cost_usd` |
+| `x-ai-model-digest` | `model_artifact_digest` (also forwarded to control plane) |
+| `x-ai-model-revision` | `model_revision` (also forwarded to control plane) |
+| `Authorization` | forwarded for OIDC JWT identity resolution |
 
 Token counts are estimated from the chat `messages` body and `max_tokens`. Estimated request cost uses configured model unit prices from `MODEL_TARGETS`.
+
+## Model supply chain headers
+
+When the control plane signed model registry is enabled, clients (or sidecars) can attach the artifact they intend to serve:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8090/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H 'x-ai-team: platform' \
+  -H 'x-ai-model-digest: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' \
+  -H 'x-ai-model-revision: v1' \
+  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"hello"}]}'
+```
+
+The gateway includes digest/revision in the governance evaluate JSON body and forwards the same headers to the control plane for registry attestation checks.
 
 ## Verdict handling
 
