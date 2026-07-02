@@ -41,6 +41,8 @@ When `CONTROL_PLANE_URL` is set, the gateway evaluates every `/v1/chat/completio
 | `GOVERNANCE_ENFORCEMENT` | `true` | Set `false` to keep the URL configured but skip checks |
 | `GOVERNANCE_FAIL_OPEN` | `false` | Allow inference when the control plane is unavailable |
 | `GOVERNANCE_TIMEOUT_SECONDS` | `2.0` | HTTP timeout for governance evaluation |
+| `GOVERNANCE_EVALUATE_RESPONSE` | `false` | Submit post-response quality evaluation to control plane |
+| `x-ai-region` | (header) | Data residency region forwarded to sovereign AI stage |
 | `GOVERNANCE_DEFAULT_TEAM` | `platform` | Default team when no header is present |
 | `GOVERNANCE_DEFAULT_OWNER` | `gateway` | Default owner |
 | `GOVERNANCE_DEFAULT_ENVIRONMENT` | `development` | Default environment |
