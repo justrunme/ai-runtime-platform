@@ -25,6 +25,7 @@ Useful individual targets: `make test`, `make lint`, `make fmt`, `make fmt-check
 ## Conventions
 
 - **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`).
+- **Python**: `make` targets use `PYTHON ?= python3`. Override with `make test PYTHON=.venv/bin/python` when needed.
 - **Code style**: enforced by `ruff` (lint + format). Run `make fmt` before committing.
 - **Comments and identifiers**: English only.
 - **Diffs**: keep them minimal and focused; avoid unrelated reformatting.

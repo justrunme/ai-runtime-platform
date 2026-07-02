@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.gateway.decisions import DecisionRecord, DecisionStore, create_decision_store
 from app.gateway.governance import GovernanceConfig, enforce_governance
-from app.gateway.tenant import TenantAttributionStore
+from app.gateway.tenant import TenantAttributionBackend, create_tenant_store
 
 
 CHAT_REQUESTS = Counter(
@@ -684,6 +684,8 @@ def build_span_exporter() -> SpanExporter:
 
 
 def configure_tracing() -> None:
+    if os.getenv("OTEL_SDK_DISABLED", "").strip().lower() in {"1", "true", "yes"}:
+        return
     service_name = os.getenv("OTEL_SERVICE_NAME", "ai-runtime-gateway")
     provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
     provider.add_span_processor(BatchSpanProcessor(build_span_exporter()))
@@ -698,9 +700,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
     app.state.governance = GovernanceConfig.from_environment()
-    app.state.tenant_attribution = (
-        TenantAttributionStore() if TenantAttributionStore.enabled_from_environment() else None
-    )
+    app.state.tenant_attribution = create_tenant_store(settings.redis_url)
     health_task = asyncio.create_task(
         health_probe_loop(app.state.backend_health, settings.health_interval_seconds)
     )
@@ -711,6 +711,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         with suppress(asyncio.CancelledError):
             await health_task
         await app.state.backend_health.aclose()
+        tenant_store = getattr(app.state, "tenant_attribution", None)
+        if tenant_store is not None:
+            await tenant_store.aclose()
         await app.state.decision_store.aclose()
         await app.state.client.aclose()
 
@@ -852,7 +855,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     settings: GatewaySettings = request.app.state.settings
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
     governance: GovernanceConfig | None = request.app.state.governance
-    tenant_store: TenantAttributionStore | None = getattr(
+    tenant_store: TenantAttributionBackend | None = getattr(
         request.app.state, "tenant_attribution", None
     )
     requests_last_minute: int | None = None
@@ -866,10 +869,10 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 if isinstance(message, dict) and isinstance(message.get("content"), str):
                     input_tokens += max(1, len(message["content"]) // 4)
         output_tokens = int(payload.get("max_tokens") or min(input_tokens or 1, 512))
-        tenant_store.record_request(
+        await tenant_store.record_request(
             team, input_tokens=input_tokens or 1, output_tokens=output_tokens
         )
-        requests_last_minute, tokens_today = tenant_store.usage_snapshot(team)
+        requests_last_minute, tokens_today = await tenant_store.usage_snapshot(team)
     if governance is not None:
         await enforce_governance(
             request.app.state.client,
