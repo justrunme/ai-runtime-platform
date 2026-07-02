@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 from fastapi import HTTPException
@@ -79,6 +81,25 @@ def test_build_evaluate_payload_maps_headers_and_cost() -> None:
     assert payload["cost_per_request_usd"] > 0
 
 
+def test_build_evaluate_payload_includes_model_supply_chain_headers() -> None:
+    request = httpx.Request(
+        "POST",
+        "http://gw/v1/chat/completions",
+        headers={
+            "x-ai-model-digest": "sha256:abc123",
+            "x-ai-model-revision": "v1",
+        },
+    )
+    payload = build_evaluate_payload(
+        request,
+        {"model": "llama3.1:8b", "messages": [{"content": "hello"}]},
+        _governance_config(),
+        {},
+    )
+    assert payload["model_artifact_digest"] == "sha256:abc123"
+    assert payload["model_revision"] == "v1"
+
+
 @pytest.mark.anyio
 async def test_enforce_governance_forwards_authorization_header() -> None:
     seen_authorization: list[str] = []
@@ -107,6 +128,46 @@ async def test_enforce_governance_forwards_authorization_header() -> None:
         )
 
     assert seen_authorization == ["Bearer signed.jwt.token"]
+
+
+@pytest.mark.anyio
+async def test_enforce_governance_forwards_model_supply_chain_headers() -> None:
+    seen_digest: list[str] = []
+    seen_revision: list[str] = []
+    seen_body_digest: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/governance/evaluate":
+            seen_digest.append(request.headers.get("x-ai-model-digest", ""))
+            seen_revision.append(request.headers.get("x-ai-model-revision", ""))
+            body = json.loads(request.content.decode())
+            seen_body_digest.append(body.get("model_artifact_digest", ""))
+            return httpx.Response(
+                200,
+                json={"final_verdict": "allow", "reasons": ["ok"], "stages": {}},
+                request=request,
+            )
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await enforce_governance(
+            client,
+            _governance_config(),
+            httpx.Request(
+                "POST",
+                "http://gw/v1/chat/completions",
+                headers={
+                    "x-ai-model-digest": "sha256:abc123",
+                    "x-ai-model-revision": "v1",
+                },
+            ),
+            {"model": "llama3.1:8b", "messages": []},
+            {},
+        )
+
+    assert seen_digest == ["sha256:abc123"]
+    assert seen_revision == ["v1"]
+    assert seen_body_digest == ["sha256:abc123"]
 
 
 @pytest.mark.anyio
