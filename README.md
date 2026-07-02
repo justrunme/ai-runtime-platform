@@ -13,17 +13,18 @@
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
-> **Execution Plane** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — reference OpenAI-compatible gateway for private AI on Kubernetes.
+> **Execution Plane** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — reference OpenAI-compatible runtime, MCP gateway, and intent proxy for governed private AI on Kubernetes.
 
-This repository is the **Execution Plane**: routing, shadow traffic, cost attribution, and optional enforcement of [Control Plane](https://github.com/justrunme/ai-infra-control-plane) governance verdicts. See [runtime enforcement mode](docs/runtime-enforcement-mode.md) and the [platform roadmap](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md).
+This repository is the **Execution Plane**: routing, shadow traffic, cost attribution, MCP tool governance, intent resolution proxying, workload identity forwarding, and optional enforcement of [Control Plane](https://github.com/justrunme/ai-infra-control-plane) governance verdicts. See [runtime enforcement mode](docs/runtime-enforcement-mode.md) and the [platform roadmap](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md).
 
 ## Platform Signals
 
 | Runtime path | Production controls | Operational evidence |
 | --- | --- | --- |
-| OpenAI-compatible FastAPI gateway | Health-aware, fallback, canary, and cost-aware routing | Animated routing demos and local response captures |
+| OpenAI-compatible FastAPI gateway | Health-aware, fallback, canary, cost-aware routing, and governance enforcement | Animated routing demos and local response captures |
+| MCP and intent gateway | Governed tool calls and `/v1/intent/resolve` proxying through the Control Plane | Platform demo verifies allowed and blocked tool calls plus intent planning |
 | vLLM and KServe serving examples | GPU scheduling, probes, ServiceMonitor, KEDA queue scaling | Helm, Kustomize, kubeconform, and Docker CI gates |
-| OpenTelemetry and Prometheus metrics | Request IDs, traces, routing labels, fallback and cost metrics | Grafana dashboard, OTLP collector, signed release image |
+| OpenTelemetry and Prometheus metrics | Request IDs, traces, routing labels, tenant attribution, fallback and cost metrics | Grafana dashboard, OTLP collector, signed release image |
 
 ## Architecture at a glance
 
@@ -89,8 +90,8 @@ This repository is the **Execution Plane** of the [AI Infrastructure OS](https:/
 
 | Layer | Role | Repository |
 | --- | --- | --- |
-| **Execution Plane** | Inference gateway, routing, shadow, enforcement | [justrunme/ai-runtime-platform](https://github.com/justrunme/ai-runtime-platform) |
-| **Control Plane** | Policy, cost, topology, drift, SLO | [justrunme/ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) |
+| **Execution Plane** | Inference gateway, routing, shadow traffic, MCP proxy, intent proxy, enforcement | [justrunme/ai-runtime-platform](https://github.com/justrunme/ai-runtime-platform) |
+| **Control Plane** | Policy, cost, topology, drift, SLO, identity, audit, intent planning | [justrunme/ai-infra-control-plane](https://github.com/justrunme/ai-infra-control-plane) |
 
 The Execution Plane runs workloads and enforces Control Plane verdicts via `CONTROL_PLANE_URL`.
 
@@ -101,6 +102,8 @@ Run the combined stack from [ai-infra-control-plane/demo/platform](https://githu
 ```sh
 # in ai-infra-control-plane checkout
 make platform-demo
+make platform-demo-production   # adds Redis quota + Prometheus live inputs
+make platform-demo-enterprise   # adds Keycloak OIDC / JWKS
 ```
 
 Gateway listens on **:8090**, control plane on **:8091**.
@@ -134,8 +137,12 @@ The first launch downloads `qwen2.5:1.5b` (Ollama `0.30.10`), then serves it thr
 
 - OpenAI-compatible `POST /v1/chat/completions` gateway with explicit model-to-backend routing.
 - Optional governance enforcement adapter: calls control plane `/governance/evaluate` before upstream execution when `CONTROL_PLANE_URL` is configured.
+- Governed MCP endpoint: `POST /mcp/tools/{tool}/call` calls control plane `/governance/evaluate-tool` before returning a governed stub response.
+- Intent proxy endpoint: `POST /v1/intent/resolve` forwards natural-language intent requests to control plane `/intent/resolve`.
 - SLO-based canary promotion simulator in `experiments/canary-analysis/` for promote/hold/rollback recommendations from shadow metrics.
-- Workload identity prototype with `TENANT_ATTRIBUTION_ENABLED` and `gateway_tenant_*` Prometheus metrics.
+- Workload identity and tenant attribution with header/JWT resolution, optional Redis-backed shared state, and `gateway_tenant_*` Prometheus metrics.
+- Optional JWKS verification for OIDC JWTs and Authorization forwarding to the Control Plane.
+- Optional post-response evaluation submission to the Control Plane for quality, latency, and cost checks.
 - Gateway-generated request ID propagation, OpenTelemetry spans exported over OTLP (console fallback), and estimated cost from the returned token usage.
 - Optional API-key authentication and a Prometheus `/metrics` endpoint exposing the gateway's own routing, fallback, latency, and cost signals.
 - Production-oriented vLLM Helm chart (`vllm-openai:v0.24.0`): GPU requests/limits, GPU node selection, probes, a Prometheus metrics service, and optional `ServiceMonitor`.
