@@ -37,9 +37,7 @@ class TenantUsage:
 class TenantAttributionBackend(Protocol):
     def resolve_team(self, request) -> str: ...
 
-    async def record_request(
-        self, team: str, *, input_tokens: int, output_tokens: int
-    ) -> None: ...
+    async def record_request(self, team: str, *, input_tokens: int, output_tokens: int) -> None: ...
 
     async def usage_snapshot(self, team: str) -> tuple[int, int]: ...
 
@@ -71,9 +69,7 @@ class TenantAttributionStore:
             usage.requests_last_minute = 0
         return usage
 
-    async def record_request(
-        self, team: str, *, input_tokens: int, output_tokens: int
-    ) -> None:
+    async def record_request(self, team: str, *, input_tokens: int, output_tokens: int) -> None:
         usage = self._get(team)
         usage.requests_last_minute += 1
         usage.tokens_today += input_tokens + output_tokens
@@ -100,9 +96,7 @@ class RedisTenantAttributionStore:
     def _key(self, team: str) -> str:
         return f"{REDIS_KEY_PREFIX}{team}"
 
-    async def record_request(
-        self, team: str, *, input_tokens: int, output_tokens: int
-    ) -> None:
+    async def record_request(self, team: str, *, input_tokens: int, output_tokens: int) -> None:
         now = time.time()
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         key = self._key(team)
