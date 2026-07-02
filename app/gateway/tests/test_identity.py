@@ -13,17 +13,12 @@ from app.gateway.identity import resolve_workload_identity
 
 def _make_jwt(claims: dict) -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).decode().rstrip("=")
-    payload = (
-        base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
-    )
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
     return f"{header}.{payload}.signature"
 
 
 def _request(headers: dict[str, str] | None = None) -> Request:
-    raw_headers = [
-        (key.lower().encode(), value.encode())
-        for key, value in (headers or {}).items()
-    ]
+    raw_headers = [(key.lower().encode(), value.encode()) for key, value in (headers or {}).items()]
     scope = {
         "type": "http",
         "method": "POST",
