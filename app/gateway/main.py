@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.gateway.decisions import DecisionRecord, DecisionStore, create_decision_store
 from app.gateway.governance import GovernanceConfig, enforce_governance
+from app.gateway.mcp import enforce_tool_governance, governed_tool_response
 from app.gateway.tenant import TenantAttributionBackend, create_tenant_store
 
 
@@ -846,6 +847,40 @@ def observe_completion(
         CHAT_FALLBACKS.labels(selected_backend=selected_backend, routing_reason=reason).inc()
     if cost:
         CHAT_COST.labels(selected_backend=selected_backend).inc(cost)
+
+
+@app.get("/mcp/tools")
+async def mcp_tools(request: Request) -> JSONResponse:
+    governance: GovernanceConfig | None = request.app.state.governance
+    if governance is None:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "CONTROL_PLANE_URL is required for MCP tool catalog"},
+        )
+    response = await request.app.state.client.get(
+        f"{governance.control_plane_url}/registry/tools",
+        timeout=governance.timeout_seconds,
+    )
+    response.raise_for_status()
+    return JSONResponse(response.json())
+
+
+@app.post("/mcp/tools/{tool_name}/call")
+async def mcp_tool_call(tool_name: str, request: Request) -> JSONResponse:
+    payload = await request.json()
+    governance: GovernanceConfig | None = request.app.state.governance
+    governance_result = None
+    if governance is not None:
+        governance_result = await enforce_tool_governance(
+            request.app.state.client,
+            governance,
+            request,
+            tool_name,
+            payload,
+        )
+    return JSONResponse(
+        governed_tool_response(tool_name, payload, governance_result),
+    )
 
 
 @app.post("/v1/chat/completions", response_model=None)

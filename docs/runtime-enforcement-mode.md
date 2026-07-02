@@ -12,6 +12,19 @@ Client request
 
 This turns the runtime layer from a routing proxy into an enterprise-style AI platform boundary: the control plane decides, the runtime enforces.
 
+## MCP gateway
+
+Governed MCP tool calls are available at `POST /mcp/tools/{tool}/call`. The gateway calls `POST /governance/evaluate-tool` on the control plane before executing (or stubbing) the tool.
+
+```bash
+curl -sS -X POST http://127.0.0.1:8090/mcp/tools/jira-read/call \
+  -H 'content-type: application/json' \
+  -H 'x-ai-team: platform' \
+  -d '{"action":"read","arguments":{"issue":"PROJ-1"}}'
+```
+
+See [MCP Gateway](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/mcp-gateway.md) in the control plane repo.
+
 ## Enable enforcement
 
 Set the control plane base URL on the gateway:

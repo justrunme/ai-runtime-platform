@@ -99,6 +99,25 @@ def _estimate_tokens(payload: dict[str, Any]) -> tuple[int, int]:
     return input_tokens, output_tokens
 
 
+def _extract_prompt_text(payload: dict[str, Any]) -> str:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return str(payload.get("prompt_text") or "")
+
+    parts: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+    return "\n".join(parts)
+
+
 def build_evaluate_payload(
     request: Request,
     payload: dict[str, Any],
@@ -163,6 +182,8 @@ def build_evaluate_payload(
         "tokens_today": int(request.headers.get("x-ai-tokens-today", tokens_today or 0)),
         "model_revision": request.headers.get("x-ai-model-revision", "").strip(),
         "model_artifact_digest": request.headers.get("x-ai-model-digest", "").strip(),
+        "prompt_text": _extract_prompt_text(payload),
+        "agent": request.headers.get("x-ai-agent", "").strip(),
     }
 
 
