@@ -10,6 +10,8 @@ import httpx
 from fastapi import HTTPException, Request
 from prometheus_client import Counter
 
+from app.gateway.identity import resolve_workload_identity
+
 GOVERNANCE_DECISIONS = Counter(
     "gateway_governance_decisions_total",
     "Governance verdicts returned by the control plane before inference execution.",
@@ -115,17 +117,24 @@ def build_evaluate_payload(
         (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000,
         6,
     )
-    team = (
-        request.headers.get("x-ai-team")
-        or request.headers.get("x-ai-tenant")
-        or config.default_team
+    identity = resolve_workload_identity(
+        request,
+        {
+            "team": config.default_team,
+            "owner": config.default_owner,
+            "environment": config.default_environment,
+            "namespace": config.default_namespace,
+        },
     )
 
     return {
-        "team": team,
-        "owner": request.headers.get("x-ai-owner", config.default_owner),
-        "environment": request.headers.get("x-ai-environment", config.default_environment),
-        "namespace": request.headers.get("x-ai-namespace", config.default_namespace),
+        "subject": identity.subject,
+        "groups": list(identity.groups),
+        "policy_pack": identity.policy_pack,
+        "team": identity.team,
+        "owner": identity.owner,
+        "environment": identity.environment,
+        "namespace": identity.namespace,
         "action": request.headers.get("x-ai-action", config.default_action),
         "model": model,
         "provider": request.headers.get("x-ai-provider", config.default_provider),
@@ -178,9 +187,18 @@ async def enforce_governance(
         tokens_today=tokens_today,
     )
     evaluate_url = f"{config.control_plane_url}/governance/evaluate"
+    headers = {}
+    request_id = request.headers.get("x-request-id")
+    if request_id:
+        headers["x-request-id"] = request_id
 
     try:
-        response = await client.post(evaluate_url, json=body, timeout=config.timeout_seconds)
+        response = await client.post(
+            evaluate_url,
+            json=body,
+            headers=headers,
+            timeout=config.timeout_seconds,
+        )
         response.raise_for_status()
         result = response.json()
     except httpx.HTTPError as error:
