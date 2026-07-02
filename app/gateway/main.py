@@ -36,6 +36,7 @@ from app.gateway.evaluations import (
     submit_response_evaluation,
 )
 from app.gateway.governance import GovernanceConfig, enforce_governance
+from app.gateway.intent import resolve_intent
 from app.gateway.mcp import enforce_tool_governance, governed_tool_response
 from app.gateway.tenant import TenantAttributionBackend, create_tenant_store
 
@@ -868,6 +869,24 @@ async def mcp_tools(request: Request) -> JSONResponse:
     )
     response.raise_for_status()
     return JSONResponse(response.json())
+
+
+@app.post("/v1/intent/resolve")
+async def intent_resolve(request: Request) -> JSONResponse:
+    payload = await request.json()
+    governance: GovernanceConfig | None = request.app.state.governance
+    if governance is None:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "CONTROL_PLANE_URL is required for intent resolution"},
+        )
+    result = await resolve_intent(
+        request.app.state.client,
+        governance,
+        request,
+        payload,
+    )
+    return JSONResponse(result)
 
 
 @app.post("/mcp/tools/{tool_name}/call")
