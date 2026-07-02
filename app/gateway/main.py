@@ -30,6 +30,11 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.gateway.decisions import DecisionRecord, DecisionStore, create_decision_store
+from app.gateway.evaluations import (
+    build_evaluation_payload,
+    response_evaluation_enabled,
+    submit_response_evaluation,
+)
 from app.gateway.governance import GovernanceConfig, enforce_governance
 from app.gateway.mcp import enforce_tool_governance, governed_tool_response
 from app.gateway.tenant import TenantAttributionBackend, create_tenant_store
@@ -1130,4 +1135,22 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             shadow_backend=shadow_model,
             estimated_cost=estimated_cost,
         )
+        if governance is not None and response_evaluation_enabled():
+            team = request.headers.get("x-ai-team", governance.default_team)
+            eval_payload = build_evaluation_payload(
+                team=team,
+                model=str(requested_model or model),
+                request_id=request_id,
+                chat_payload=payload,
+                completion=response,
+                latency_ms=round((time.monotonic() - started_at) * 1000, 2),
+                cost_usd=estimated_cost,
+            )
+            asyncio.create_task(
+                submit_response_evaluation(
+                    request.app.state.client,
+                    governance,
+                    eval_payload,
+                )
+            )
         return JSONResponse(response, headers=headers)

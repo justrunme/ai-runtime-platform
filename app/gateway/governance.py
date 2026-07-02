@@ -184,6 +184,7 @@ def build_evaluate_payload(
         "model_artifact_digest": request.headers.get("x-ai-model-digest", "").strip(),
         "prompt_text": _extract_prompt_text(payload),
         "agent": request.headers.get("x-ai-agent", "").strip(),
+        "region": request.headers.get("x-ai-region", "").strip(),
     }
 
 
