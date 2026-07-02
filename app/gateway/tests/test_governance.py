@@ -80,6 +80,36 @@ def test_build_evaluate_payload_maps_headers_and_cost() -> None:
 
 
 @pytest.mark.anyio
+async def test_enforce_governance_forwards_authorization_header() -> None:
+    seen_authorization: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/governance/evaluate":
+            seen_authorization.append(request.headers.get("authorization", ""))
+            return httpx.Response(
+                200,
+                json={"final_verdict": "allow", "reasons": ["ok"], "stages": {}},
+                request=request,
+            )
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await enforce_governance(
+            client,
+            _governance_config(),
+            httpx.Request(
+                "POST",
+                "http://gw/v1/chat/completions",
+                headers={"authorization": "Bearer signed.jwt.token"},
+            ),
+            {"model": "qwen", "messages": []},
+            {},
+        )
+
+    assert seen_authorization == ["Bearer signed.jwt.token"]
+
+
+@pytest.mark.anyio
 async def test_enforce_governance_allows_request() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/governance/evaluate":
