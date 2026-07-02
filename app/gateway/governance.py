@@ -187,10 +187,13 @@ async def enforce_governance(
         tokens_today=tokens_today,
     )
     evaluate_url = f"{config.control_plane_url}/governance/evaluate"
-    headers = {}
+    headers: dict[str, str] = {}
     request_id = request.headers.get("x-request-id")
     if request_id:
         headers["x-request-id"] = request_id
+    authorization = request.headers.get("authorization", "").strip()
+    if authorization:
+        headers["authorization"] = authorization
 
     try:
         response = await client.post(

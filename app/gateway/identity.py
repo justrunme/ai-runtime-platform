@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from dataclasses import dataclass
 from typing import Any
 
+import jwt
 from fastapi import Request
+
+from app.gateway.jwt_verify import (
+    decode_unsigned_payload,
+    is_jwt_verify_enabled,
+    verify_bearer_token,
+)
 
 KNOWN_TEAMS = frozenset({"platform", "finance", "search"})
 
@@ -22,18 +28,6 @@ class WorkloadIdentity:
     environment: str
     namespace: str
     source: str
-
-
-def _decode_jwt_payload(token: str) -> dict[str, Any]:
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("JWT must have three segments")
-    padding = "=" * (-len(parts[1]) % 4)
-    payload = base64.urlsafe_b64decode(parts[1] + padding)
-    decoded = json.loads(payload)
-    if not isinstance(decoded, dict):
-        raise ValueError("JWT payload must be a JSON object")
-    return decoded
 
 
 def _normalize_groups(value: Any) -> list[str]:
@@ -51,16 +45,22 @@ def _team_from_groups(groups: list[str], fallback: str) -> str:
     return fallback
 
 
+def extract_bearer_claims(authorization: str) -> dict[str, Any]:
+    if not authorization.lower().startswith("bearer "):
+        return {}
+    token = authorization[7:].strip()
+    if not token:
+        return {}
+    try:
+        if is_jwt_verify_enabled():
+            return verify_bearer_token(token)
+        return decode_unsigned_payload(token)
+    except (ValueError, json.JSONDecodeError, jwt.PyJWTError):
+        return {}
+
+
 def resolve_workload_identity(request: Request, defaults: dict[str, str]) -> WorkloadIdentity:
-    claims: dict[str, Any] = {}
-    authorization = request.headers.get("authorization", "")
-    if authorization.lower().startswith("bearer "):
-        token = authorization[7:].strip()
-        if token:
-            try:
-                claims = _decode_jwt_payload(token)
-            except (ValueError, json.JSONDecodeError):
-                claims = {}
+    claims = extract_bearer_claims(request.headers.get("authorization", ""))
 
     header_groups = [
         group.strip()
