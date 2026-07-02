@@ -78,7 +78,7 @@ This topology is the runtime equivalent of a service mesh view: model backends a
 
 ## Control Plane to Runtime policy loop
 
-The project intentionally keeps runtime execution separate from governance. The long-term architecture is:
+The project intentionally keeps runtime execution separate from governance. The current runtime already calls the Control Plane for request enforcement, MCP tool governance, intent resolution, and optional post-response evaluation. Longer term, the same boundary can also carry signed routing-policy updates.
 
 ```mermaid
 sequenceDiagram
@@ -117,9 +117,14 @@ The runtime remains responsible for fast request execution. The control plane be
 | OpenAI-compatible gateway | Implemented | Keep stable client contract |
 | Canary routing | Implemented through weighted aliases | Add promotion signals from telemetry |
 | Fallback routing | Implemented for timeout, network error, and `5xx` | Add richer failure classes |
-| Health scoring | Implemented per gateway replica | Export fleet-wide health to shared telemetry |
+| Health scoring | Implemented per gateway replica, Redis-backed when `REDIS_URL` is set | Export fleet-wide health to shared telemetry |
 | Health-aware routing | Implemented with minimum score threshold | Use control-plane policy updates |
 | Cost-aware routing | Implemented with configured unit costs | Connect budget policy from control plane |
+| Governance enforcement | Implemented through `CONTROL_PLANE_URL` | Expand policy context and approval integration |
+| MCP tool governance | Implemented through `/mcp/tools/{tool}/call` | Replace governed stubs with real upstream MCP servers |
+| Intent resolution | Implemented through `/v1/intent/resolve` proxy | Add richer plan execution and audit correlation |
+| OIDC/JWKS identity | Implemented for JWT verification and forwarding | Add production IdP examples beyond demo Keycloak |
+| Tenant attribution | Implemented with in-memory or Redis-backed counters | Add persistent billing/chargeback integration |
 | Dynamic policy engine | Not implemented | Watch signed policy config and apply without redeploying clients |
 
 The next meaningful platform step is not another manifest. It is a dynamic policy engine that lets the control plane update routing strategy while the runtime keeps serving the OpenAI-compatible request path.
