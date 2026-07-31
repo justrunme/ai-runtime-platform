@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from starlette.background import BackgroundTask
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -28,6 +27,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from starlette.background import BackgroundTask
 
 from app.gateway.decisions import DecisionRecord, DecisionStore, create_decision_store
 from app.gateway.evaluations import (
@@ -39,7 +39,6 @@ from app.gateway.governance import GovernanceConfig, enforce_governance
 from app.gateway.intent import resolve_intent
 from app.gateway.mcp import enforce_tool_governance, governed_tool_response
 from app.gateway.tenant import TenantAttributionBackend, create_tenant_store
-
 
 CHAT_REQUESTS = Counter(
     "gateway_chat_requests_total",
@@ -96,7 +95,7 @@ class RoutingWeights(BaseModel):
     cost: float = Field(default=0.2, ge=0, le=1)
 
     @model_validator(mode="after")
-    def totals_one(self) -> "RoutingWeights":
+    def totals_one(self) -> RoutingWeights:
         if abs(self.health + self.latency + self.cost - 1) > 0.0001:
             raise ValueError("routing weights must total 1")
         return self
@@ -107,7 +106,7 @@ class RoutingPolicy(BaseModel):
     weights: RoutingWeights = Field(default_factory=RoutingWeights)
 
     @model_validator(mode="after")
-    def uses_supported_strategy(self) -> "RoutingPolicy":
+    def uses_supported_strategy(self) -> RoutingPolicy:
         if self.strategy != "balanced":
             raise ValueError("unsupported routing strategy")
         return self
@@ -125,7 +124,7 @@ class ModelRoute(BaseModel):
     shadow: str | None = None
 
     @model_validator(mode="after")
-    def has_valid_policy(self) -> "ModelRoute":
+    def has_valid_policy(self) -> ModelRoute:
         is_canary = bool(self.targets)
         is_failover = self.primary is not None
         if is_canary == is_failover:
@@ -168,7 +167,7 @@ class GatewaySettings(BaseModel):
     redis_url: str | None = None
 
     @model_validator(mode="after")
-    def route_targets_exist(self) -> "GatewaySettings":
+    def route_targets_exist(self) -> GatewaySettings:
         missing = {
             model
             for route in self.model_routes.values()
@@ -180,7 +179,7 @@ class GatewaySettings(BaseModel):
         return self
 
     @classmethod
-    def from_environment(cls) -> "GatewaySettings":
+    def from_environment(cls) -> GatewaySettings:
         default_targets = {
             "qwen2.5-7b-instruct": {
                 "url": "http://vllm-qwen.ai-runtime.svc.cluster.local:8000",
@@ -731,9 +730,8 @@ PUBLIC_PATHS = frozenset({"/healthz", "/metrics"})
 def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
     """Accept a bearer token or x-api-key header against the configured key set."""
     header = request.headers.get("authorization", "")
-    if header.startswith("Bearer "):
-        if header.removeprefix("Bearer ").strip() in api_keys:
-            return True
+    if header.startswith("Bearer ") and header.removeprefix("Bearer ").strip() in api_keys:
+        return True
     return request.headers.get("x-api-key", "") in api_keys
 
 
