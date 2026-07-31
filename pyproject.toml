@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-runtime-platform"
-version = "0.1.0"
+version = "0.1.1"
 description = "Kubernetes-native private LLM inference runtime"
 requires-python = ">=3.12"
 dependencies = [
@@ -42,3 +42,12 @@ markers = ["anyio: run the test on the configured anyio backend"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint]
+# Pin the rule set so Dependabot ruff bumps do not suddenly fail CI on new
+# pedantic checks. Expand deliberately when adopting new lint groups.
+select = ["E", "F", "I", "UP", "B", "SIM", "EXE"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

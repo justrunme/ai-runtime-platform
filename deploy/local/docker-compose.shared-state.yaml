@@ -7,7 +7,7 @@
 #     up --build
 services:
   redis:
-    image: ${REDIS_IMAGE:-redis:7.4-alpine}
+    image: ${REDIS_IMAGE:-redis:8.0-alpine}
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
