@@ -736,7 +736,7 @@ def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="0.1.1", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 
 

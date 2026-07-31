@@ -131,7 +131,7 @@ flowchart LR
 docker compose -f deploy/local/docker-compose.yaml up --build
 ```
 
-The first launch downloads `qwen2.5:1.5b` (Ollama `0.30.10`), then serves it through the gateway's standard `/v1/chat/completions` endpoint. See the full [local demo guide](deploy/local/README.md), including the response check and model selection. This local profile validates routing and API compatibility only; GPU performance, KEDA, KServe and GitOps remain production-path components.
+The first launch downloads `qwen2.5:1.5b` (Ollama `0.32.5`), then serves it through the gateway's standard `/v1/chat/completions` endpoint. See the full [local demo guide](deploy/local/README.md), including the response check and model selection. This local profile validates routing and API compatibility only; GPU performance, KEDA, KServe and GitOps remain production-path components.
 
 ## What is implemented
 
@@ -145,7 +145,7 @@ The first launch downloads `qwen2.5:1.5b` (Ollama `0.30.10`), then serves it thr
 - Optional post-response evaluation submission to the Control Plane for quality, latency, and cost checks.
 - Gateway-generated request ID propagation, OpenTelemetry spans exported over OTLP (console fallback), and estimated cost from the returned token usage.
 - Optional API-key authentication and a Prometheus `/metrics` endpoint exposing the gateway's own routing, fallback, latency, and cost signals.
-- Production-oriented vLLM Helm chart (`vllm-openai:v0.24.0`): GPU requests/limits, GPU node selection, probes, a Prometheus metrics service, and optional `ServiceMonitor`.
+- Production-oriented vLLM Helm chart (`vllm-openai:v0.26.0`): GPU requests/limits, GPU node selection, probes, a Prometheus metrics service, and optional `ServiceMonitor`.
 - KServe `InferenceService` example in Standard mode for a generative workload.
 - KEDA `ScaledObject` based on vLLM queue pressure (`vllm:num_requests_waiting`), rather than CPU utilization.
 - OpenTelemetry Collector configuration, Argo Rollouts canary example, Argo CD application, and a k6 benchmark.
@@ -188,7 +188,7 @@ helm upgrade --install qwen charts/vllm-runtime \
 # Build and publish the gateway image before applying deploy/base/gateway.yaml.
 ```
 
-The chart defaults are intentionally only a starting profile. Production clusters must set the model revision, registry digest, GPU type/count, persistent model-cache strategy, network policy, authentication, and resource sizing through GitOps values. The chart pins `vllm-openai:v0.24.0`; swap `model.name` for any Hugging Face revision the runtime supports (for example `Qwen/Qwen3-8B` or keep `Qwen/Qwen2.5-7B-Instruct`).
+The chart defaults are intentionally only a starting profile. Production clusters must set the model revision, registry digest, GPU type/count, persistent model-cache strategy, network policy, authentication, and resource sizing through GitOps values. The chart pins `vllm-openai:v0.26.0`; swap `model.name` for any Hugging Face revision the runtime supports (for example `Qwen/Qwen3-8B` or keep `Qwen/Qwen2.5-7B-Instruct`).
 
 ## Gateway contract
 
