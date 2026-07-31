@@ -1,12 +1,12 @@
 from types import SimpleNamespace
 
 import fakeredis.aioredis
-import pytest
 import httpx
+import pytest
 
 from app.gateway.main import (
-    GatewaySettings,
     BackendHealthStore,
+    GatewaySettings,
     HealthStore,
     ModelRoute,
     ModelTarget,
@@ -16,17 +16,17 @@ from app.gateway.main import (
     RoutingPolicy,
     RoutingWeights,
     app,
-    create_health_store,
-    create_decision_store,
     chat_completions_url,
+    create_decision_store,
+    create_health_store,
     post_completion_with_fallback,
     request_cost,
     request_is_authorized,
     resolve_route,
     routing_reason,
-    select_route_target,
-    select_health_aware_backend,
     select_cost_aware_backend,
+    select_health_aware_backend,
+    select_route_target,
 )
 
 

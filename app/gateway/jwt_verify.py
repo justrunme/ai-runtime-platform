@@ -29,7 +29,7 @@ def decode_unsigned_payload(token: str) -> dict[str, Any]:
     payload = base64.urlsafe_b64decode(parts[1] + padding)
     decoded = json.loads(payload)
     if not isinstance(decoded, dict):
-        raise ValueError("JWT payload must be a JSON object")
+        raise TypeError("JWT payload must be a JSON object")
     return decoded
 
 
@@ -60,5 +60,5 @@ def verify_bearer_token(token: str) -> dict[str, Any]:
 
     decoded = jwt.decode(token, signing_key.key, **decode_kwargs)
     if not isinstance(decoded, dict):
-        raise ValueError("JWT payload must be a JSON object")
+        raise TypeError("JWT payload must be a JSON object")
     return decoded

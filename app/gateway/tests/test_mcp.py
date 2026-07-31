@@ -7,11 +7,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.gateway.governance import GovernanceConfig, build_evaluate_payload
+from app.gateway.main import GatewaySettings, ModelTarget, app, create_decision_store
 from app.gateway.mcp import (
     enforce_tool_governance,
     governed_tool_response,
 )
-from app.gateway.main import GatewaySettings, ModelTarget, app, create_decision_store
 
 
 def _governance_config(**overrides) -> GovernanceConfig:
