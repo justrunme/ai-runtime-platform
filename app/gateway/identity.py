@@ -55,7 +55,7 @@ def extract_bearer_claims(authorization: str) -> dict[str, Any]:
         if is_jwt_verify_enabled():
             return verify_bearer_token(token)
         return decode_unsigned_payload(token)
-    except (ValueError, json.JSONDecodeError, jwt.PyJWTError):
+    except (TypeError, ValueError, json.JSONDecodeError, jwt.PyJWTError):
         return {}
 
 
