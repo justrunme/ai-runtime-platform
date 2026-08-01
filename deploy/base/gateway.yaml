@@ -35,7 +35,7 @@ spec:
               app.kubernetes.io/name: ai-runtime-gateway
       containers:
         - name: gateway
-          image: ghcr.io/justrunme/ai-runtime-platform:1.8.0
+          image: ghcr.io/justrunme/ai-runtime-platform:1.9.0
           ports:
             - name: http
               containerPort: 8080

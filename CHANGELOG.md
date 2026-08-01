@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.0
+
+Usage and cost event emission (no billing database).
+
+- Structured usage events: tenant, tokens, cost, latency, outcome, decision id
+- OTEL span attributes `ai.runtime.usage.*`
+- Optional webhook sink via `USAGE_EVENTS_WEBHOOK_URL` with idempotency key + bounded buffer
+
 ## 1.8.0
 
 Real MCP execution transport.
