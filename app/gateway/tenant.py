@@ -24,7 +24,7 @@ TENANT_TOKENS = Counter(
     ["team"],
 )
 
-REDIS_KEY_PREFIX = "ai:tenant:"
+REDIS_KEY_PREFIX = "arp:"
 
 
 @dataclass
@@ -59,7 +59,9 @@ class TenantAttributionStore:
         }
 
     def resolve_team(self, request) -> str:
-        return request.headers.get("x-ai-team") or request.headers.get("x-ai-tenant") or "platform"
+        from app.gateway.tenant_context import resolve_tenant_id
+
+        return resolve_tenant_id(request)
 
     def _get(self, team: str) -> TenantUsage:
         usage = self._usage.setdefault(team, TenantUsage())
@@ -91,10 +93,12 @@ class RedisTenantAttributionStore:
         self._redis = redis
 
     def resolve_team(self, request) -> str:
-        return request.headers.get("x-ai-team") or request.headers.get("x-ai-tenant") or "platform"
+        from app.gateway.tenant_context import resolve_tenant_id
+
+        return resolve_tenant_id(request)
 
     def _key(self, team: str) -> str:
-        return f"{REDIS_KEY_PREFIX}{team}"
+        return f"{REDIS_KEY_PREFIX}{team}:quota"
 
     async def record_request(self, team: str, *, input_tokens: int, output_tokens: int) -> None:
         now = time.time()

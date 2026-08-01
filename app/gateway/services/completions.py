@@ -113,6 +113,7 @@ async def record_decision(
     control_plane_version: str | None = None,
     runtime_version: str | None = None,
     enforcement_outcome: str | None = None,
+    tenant_id: str | None = None,
 ) -> None:
     await store.put(
         DecisionRecord(
@@ -135,6 +136,7 @@ async def record_decision(
             control_plane_version=control_plane_version,
             runtime_version=runtime_version,
             enforcement_outcome=enforcement_outcome,
+            tenant_id=tenant_id,
         )
     )
 

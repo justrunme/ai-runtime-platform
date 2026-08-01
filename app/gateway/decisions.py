@@ -43,6 +43,8 @@ class DecisionRecord:
     control_plane_version: str | None = None
     runtime_version: str | None = None
     enforcement_outcome: str | None = None
+    # Tenant isolation (v1.6). Absent on pre-1.6 records → treated as shared/legacy.
+    tenant_id: str | None = None
     recorded_at: float = 0.0
 
     def to_dict(self) -> dict[str, object]:
@@ -90,6 +92,7 @@ class DecisionRecord:
             control_plane_version=_optional_str(data, "control_plane_version"),
             runtime_version=_optional_str(data, "runtime_version"),
             enforcement_outcome=_optional_str(data, "enforcement_outcome"),
+            tenant_id=_optional_str(data, "tenant_id"),
             recorded_at=float(data.get("recorded_at") or 0),
         )
 
@@ -122,7 +125,13 @@ class DecisionStore:
     async def put(self, record: DecisionRecord) -> None:
         raise NotImplementedError
 
-    async def get(self, request_id: str) -> DecisionRecord | None:
+    async def get(
+        self,
+        request_id: str,
+        *,
+        tenant_id: str | None = None,
+        any_tenant: bool = False,
+    ) -> DecisionRecord | None:
         raise NotImplementedError
 
     async def patch_shadow(self, request_id: str, *, outcome: str, duration_ms: float) -> None:
@@ -144,26 +153,54 @@ class InMemoryDecisionStore(DecisionStore):
         self._max_entries = max_entries
         self._lock = asyncio.Lock()
 
+    @staticmethod
+    def _storage_key(record: DecisionRecord) -> str:
+        tenant = record.tenant_id or "platform"
+        return f"{tenant}:{record.request_id}"
+
     async def put(self, record: DecisionRecord) -> None:
         stamped = DecisionRecord(**{**record.to_dict(), "recorded_at": time.time()})
+        key = self._storage_key(stamped)
         async with self._lock:
-            if record.request_id not in self._entries:
-                self._order.append(record.request_id)
-            self._entries[record.request_id] = stamped
+            if key not in self._entries:
+                self._order.append(key)
+            self._entries[key] = stamped
             while len(self._order) > self._max_entries:
                 oldest = self._order.pop(0)
                 self._entries.pop(oldest, None)
 
-    async def get(self, request_id: str) -> DecisionRecord | None:
+    async def get(
+        self,
+        request_id: str,
+        *,
+        tenant_id: str | None = None,
+        any_tenant: bool = False,
+    ) -> DecisionRecord | None:
         async with self._lock:
+            if any_tenant:
+                for record in self._entries.values():
+                    if record.request_id == request_id:
+                        return record
+                return None
+            tenant = tenant_id or "platform"
+            record = self._entries.get(f"{tenant}:{request_id}")
+            if record is not None:
+                return record
+            # Legacy unscoped records (pre-1.6 tests / single-tenant demos).
             return self._entries.get(request_id)
 
     async def patch_shadow(self, request_id: str, *, outcome: str, duration_ms: float) -> None:
         async with self._lock:
-            current = self._entries.get(request_id)
-            if current is None:
+            current = None
+            key = None
+            for storage_key, record in self._entries.items():
+                if record.request_id == request_id:
+                    current = record
+                    key = storage_key
+                    break
+            if current is None or key is None:
                 return
-            self._entries[request_id] = DecisionRecord(
+            self._entries[key] = DecisionRecord(
                 **{
                     **current.to_dict(),
                     "shadow_outcome": outcome,
@@ -180,8 +217,16 @@ class RedisDecisionStore(DecisionStore):
         self._ttl_seconds = ttl_seconds
 
     @staticmethod
-    def _key(request_id: str) -> str:
+    def _key(tenant_id: str, request_id: str) -> str:
+        return f"arp:{tenant_id}:decision:{request_id}"
+
+    @staticmethod
+    def _legacy_key(request_id: str) -> str:
         return f"arp:decision:{request_id}"
+
+    @staticmethod
+    def _index_key(request_id: str) -> str:
+        return f"arp:decision-index:{request_id}"
 
     @staticmethod
     def _serialize(record: DecisionRecord) -> dict[str, str]:
@@ -195,25 +240,49 @@ class RedisDecisionStore(DecisionStore):
                 payload[key] = str(value)
         return payload
 
-    async def put(self, record: DecisionRecord) -> None:
-        stamped = DecisionRecord(**{**record.to_dict(), "recorded_at": time.time()})
-        key = self._key(record.request_id)
-        pipe = self._redis.pipeline()
-        pipe.hset(key, mapping=self._serialize(stamped))
-        pipe.expire(key, self._ttl_seconds)
-        await pipe.execute()
-
-    async def get(self, request_id: str) -> DecisionRecord | None:
-        data = await self._redis.hgetall(self._key(request_id))
+    def _decode(self, data: dict[str, Any]) -> DecisionRecord | None:
         if not data:
             return None
-        # Compatibility with previous JSON-blob values.
         if len(data) == 1 and "data" in data:
             return DecisionRecord(**json.loads(data["data"]))
         return DecisionRecord.from_mapping(data)
 
+    async def put(self, record: DecisionRecord) -> None:
+        stamped = DecisionRecord(**{**record.to_dict(), "recorded_at": time.time()})
+        tenant = stamped.tenant_id or "platform"
+        key = self._key(tenant, stamped.request_id)
+        pipe = self._redis.pipeline()
+        pipe.hset(key, mapping=self._serialize(stamped))
+        pipe.expire(key, self._ttl_seconds)
+        pipe.set(self._index_key(stamped.request_id), tenant, ex=self._ttl_seconds)
+        await pipe.execute()
+
+    async def get(
+        self,
+        request_id: str,
+        *,
+        tenant_id: str | None = None,
+        any_tenant: bool = False,
+    ) -> DecisionRecord | None:
+        if any_tenant:
+            indexed = await self._redis.get(self._index_key(request_id))
+            if indexed:
+                data = await self._redis.hgetall(self._key(str(indexed), request_id))
+                decoded = self._decode(data)
+                if decoded is not None:
+                    return decoded
+            return self._decode(await self._redis.hgetall(self._legacy_key(request_id)))
+
+        tenant = tenant_id or "platform"
+        data = await self._redis.hgetall(self._key(tenant, request_id))
+        decoded = self._decode(data)
+        if decoded is not None:
+            return decoded
+        return self._decode(await self._redis.hgetall(self._legacy_key(request_id)))
+
     async def patch_shadow(self, request_id: str, *, outcome: str, duration_ms: float) -> None:
-        key = self._key(request_id)
+        indexed = await self._redis.get(self._index_key(request_id))
+        key = self._key(str(indexed), request_id) if indexed else self._legacy_key(request_id)
         # Atomic field update — avoids lost updates from concurrent read-modify-write.
         updated = await self._redis.hset(
             key,

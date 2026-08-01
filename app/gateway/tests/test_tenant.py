@@ -12,14 +12,21 @@ async def test_tenant_store_records_requests_and_tokens() -> None:
     assert tokens == 150
 
 
-def test_resolve_team_prefers_header() -> None:
+def test_resolve_team_uses_jwt_claims_not_headers() -> None:
     store = TenantAttributionStore()
+    # Spoof headers must not select tenant once JWT claims are the source of truth.
     request = type(
         "Request",
         (),
-        {"headers": {"x-ai-team": "search", "x-ai-tenant": "ignored"}},
+        {
+            "headers": {"x-ai-team": "search", "x-ai-tenant": "ignored"},
+            "state": type("State", (), {"identity_claims": {"tenant": "finance"}})(),
+        },
     )()
-    assert store.resolve_team(request) == "search"
+    assert store.resolve_team(request) == "finance"
+
+    anonymous = type("Request", (), {"headers": {"x-ai-team": "search"}})()
+    assert store.resolve_team(anonymous) == "platform"
 
 
 @pytest.mark.anyio

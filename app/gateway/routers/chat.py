@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
 
+from app.gateway.admission import AdmissionLease
 from app.gateway.config import GatewaySettings
 from app.gateway.errors import api_error, raise_api_error
 from app.gateway.evaluations import (
@@ -42,6 +43,8 @@ from app.gateway.services.routing import (
 from app.gateway.services.urls import chat_completions_url, request_cost
 from app.gateway.streaming import observe_upstream_stream, stream_headers
 from app.gateway.tenant import TenantAttributionBackend
+from app.gateway.tenant_context import resolve_tenant_id
+from app.gateway.tenant_policy import load_tenant_policy_bundle
 
 router = APIRouter(tags=["chat"])
 
@@ -69,6 +72,56 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     requested_model = payload.get("model")
     settings: GatewaySettings = request.app.state.settings
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    tenant_id = resolve_tenant_id(request)
+    tenant_policy = load_tenant_policy_bundle()
+    is_route = requested_model in settings.model_routes
+    if is_route and not tenant_policy.route_allowed(tenant_id, str(requested_model)):
+        raise_api_error(
+            403,
+            code="tenant_route_denied",
+            message="tenant is not allowed to use this route",
+            error_type="permission_error",
+            request_id=request_id,
+        )
+    if not is_route and not tenant_policy.model_allowed(tenant_id, str(requested_model or "")):
+        raise_api_error(
+            403,
+            code="tenant_model_denied",
+            message="tenant is not allowed to use this model",
+            error_type="permission_error",
+            request_id=request_id,
+        )
+
+    admission = getattr(request.app.state, "admission", None)
+    lease: AdmissionLease | None = None
+    if admission is not None:
+        lease = await admission.acquire_lease(tenant_id)
+    try:
+        return await _chat_completions_admitted(
+            request,
+            payload=payload,
+            settings=settings,
+            request_id=request_id,
+            tenant_id=tenant_id,
+            requested_model=requested_model,
+            lease=lease,
+        )
+    except Exception:
+        if lease is not None:
+            await lease.release()
+        raise
+
+
+async def _chat_completions_admitted(
+    request: Request,
+    *,
+    payload: dict,
+    settings: GatewaySettings,
+    request_id: str,
+    tenant_id: str,
+    requested_model: object,
+    lease: AdmissionLease | None,
+) -> JSONResponse | StreamingResponse:
     governance: GovernanceConfig | None = request.app.state.governance
     tenant_store: TenantAttributionBackend | None = getattr(
         request.app.state, "tenant_attribution", None
@@ -220,39 +273,44 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 evidence_fields = evidence.as_decision_fields() if evidence else {}
 
                 async def _finalize_stream(observation) -> None:
-                    success = observation.outcome == "success"
-                    await health_store.record_request(
-                        selected_model, success=success, fallback_used=fallback_used
-                    )
-                    observe_completion(
-                        requested_model=requested_model,
-                        selected_backend=selected_model,
-                        reason=reason,
-                        success=success,
-                        fallback_used=fallback_used,
-                        duration_s=observation.duration_ms / 1000,
-                        cost=None,
-                    )
-                    span.set_attribute("ai.runtime.stream_outcome", observation.outcome)
-                    if observation.ttft_ms is not None:
-                        span.set_attribute("ai.runtime.stream_ttft_ms", observation.ttft_ms)
-                    await record_decision(
-                        decision_store,
-                        request_id=request_id,
-                        requested_model=requested_model,
-                        selected_backend=selected_model,
-                        routing_reason=reason,
-                        fallback_used=fallback_used,
-                        health_score=(await health_store.routing_signal(selected_model))[0],
-                        duration_ms=observation.duration_ms,
-                        shadow_backend=shadow_model,
-                        stream_outcome=observation.outcome,
-                        stream_ttft_ms=observation.ttft_ms,
-                        **evidence_fields,
-                        enforcement_outcome=(
-                            "executed" if success else f"stream_{observation.outcome}"
-                        ),
-                    )
+                    try:
+                        success = observation.outcome == "success"
+                        await health_store.record_request(
+                            selected_model, success=success, fallback_used=fallback_used
+                        )
+                        observe_completion(
+                            requested_model=requested_model,
+                            selected_backend=selected_model,
+                            reason=reason,
+                            success=success,
+                            fallback_used=fallback_used,
+                            duration_s=observation.duration_ms / 1000,
+                            cost=None,
+                        )
+                        span.set_attribute("ai.runtime.stream_outcome", observation.outcome)
+                        if observation.ttft_ms is not None:
+                            span.set_attribute("ai.runtime.stream_ttft_ms", observation.ttft_ms)
+                        await record_decision(
+                            decision_store,
+                            request_id=request_id,
+                            requested_model=requested_model,
+                            selected_backend=selected_model,
+                            routing_reason=reason,
+                            fallback_used=fallback_used,
+                            health_score=(await health_store.routing_signal(selected_model))[0],
+                            duration_ms=observation.duration_ms,
+                            shadow_backend=shadow_model,
+                            stream_outcome=observation.outcome,
+                            stream_ttft_ms=observation.ttft_ms,
+                            **evidence_fields,
+                            enforcement_outcome=(
+                                "executed" if success else f"stream_{observation.outcome}"
+                            ),
+                            tenant_id=tenant_id,
+                        )
+                    finally:
+                        if lease is not None:
+                            await lease.release()
 
                 return StreamingResponse(
                     observe_upstream_stream(
@@ -306,6 +364,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 duration_ms=round((time.monotonic() - started_at) * 1000, 2),
                 **(evidence.as_decision_fields() if evidence else {}),
                 enforcement_outcome="upstream_error",
+                tenant_id=tenant_id,
             )
             raise api_error(
                 502,
@@ -385,6 +444,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             estimated_cost=estimated_cost,
             **(evidence.as_decision_fields() if evidence else {}),
             enforcement_outcome="executed",
+            tenant_id=tenant_id,
         )
         if governance is not None and response_evaluation_enabled():
             team = request.headers.get("x-ai-team", governance.default_team)
@@ -404,4 +464,6 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                     eval_payload,
                 )
             )
+        if lease is not None:
+            await lease.release()
         return JSONResponse(response, headers=headers)
