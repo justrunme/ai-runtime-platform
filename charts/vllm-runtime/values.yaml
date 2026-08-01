@@ -8,8 +8,48 @@ image:
 model:
   name: Qwen/Qwen2.5-7B-Instruct
   servedName: qwen2.5-7b-instruct
+  revision: ""
+  artifactDigest: ""
   gpuMemoryUtilization: "0.90"
   maxModelLen: "8192"
+  tensorParallelSize: 1
+  quantization: ""
+  dtype: "auto"
+  extraArgs: []
+
+huggingface:
+  existingSecret: ""
+  tokenKey: token
+
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  mountPath: /root/.cache/huggingface
+
+shm:
+  enabled: true
+  sizeLimit: 8Gi
+
+runtimeClassName: ""
+gpuType: ""
+
+strategy:
+  type: Recreate
+
+terminationGracePeriodSeconds: 120
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: false
 
 resources:
   requests:
@@ -28,6 +68,33 @@ tolerations:
   - key: nvidia.com/gpu
     operator: Exists
     effect: NoSchedule
+
+affinity: {}
+
+topologySpreadConstraints: []
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  failureThreshold: 60
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 10
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 20
 
 serviceMonitor:
   enabled: true

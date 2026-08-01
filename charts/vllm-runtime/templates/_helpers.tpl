@@ -9,3 +9,17 @@
 {{- printf "%s-%s" .Release.Name (include "vllm-runtime.name" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
+
+{{- define "vllm-runtime.labels" -}}
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
+app.kubernetes.io/name: {{ include "vllm-runtime.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: ai-runtime
+{{- end }}
+
+{{- define "vllm-runtime.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "vllm-runtime.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
