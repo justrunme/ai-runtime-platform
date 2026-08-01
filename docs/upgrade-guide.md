@@ -1,11 +1,18 @@
 # Upgrade guide
 
+## To v1.3.0
+
+1. All non-public routes require auth when JWT or API keys are configured — including `/v1/models` and `/v1/decisions/{id}`.
+2. Production must set `OIDC_JWT_ISSUER` and `OIDC_JWT_AUDIENCE` (see `secrets.example.yaml`).
+3. Prefer managed Redis; demo Redis remains demo-only.
+4. Release/nightly workflow validates against published Control Plane images.
+5. See [auth boundary](auth-boundary.md) and [compatibility matrix](compatibility-matrix.md).
+
 ## To v1.2.0
 
 1. No intentional OpenAPI breaking changes from 1.1; refresh clients only if they parsed FastAPI `detail` wrappers (removed in 1.1).
 2. Prefer external Redis Secret over demo Redis.
 3. For vLLM chart upgrades, pin `image.digest` when promoting to production GPUs.
-4. See [compatibility matrix](compatibility-matrix.md).
 
 ## To v1.1.0
 

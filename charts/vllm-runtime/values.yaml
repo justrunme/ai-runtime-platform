@@ -14,12 +14,14 @@ serviceAccount:
 
 networkPolicy:
   enabled: true
+  # Default egress is intentionally permissive so model weights can be pulled.
+  # Use values-production.yaml / values-networkpolicy-hardened.yaml for DNS + HTTPS-only egress.
   ingressFrom:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: ai-runtime
   egress:
-    - {}
+    - {} # permissive egress (allow all)
 
 model:
   name: Qwen/Qwen2.5-7B-Instruct

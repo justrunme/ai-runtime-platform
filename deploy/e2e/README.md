@@ -1,15 +1,6 @@
-# Platform e2e (Runtime + Control Plane stub)
+# Platform e2e
 
-Proves combined golden paths for Execution Plane v1.1+:
-
-- allow → inference
-- block → model backend not reached (403)
-- approval_required → approve → retry with `x-ai-approval-id`
-- decision written on gateway-a readable from gateway-b (shared Redis)
-- Redis down → `/readyz` 503
-- Control Plane down → chat 503 (fail-closed)
-
-## Run
+## PR / every commit (mock Control Plane)
 
 ```bash
 docker compose -f deploy/e2e/docker-compose.yaml up --build -d
@@ -17,13 +8,39 @@ docker compose -f deploy/e2e/docker-compose.yaml up --build -d
 docker compose -f deploy/e2e/docker-compose.yaml down -v
 ```
 
-Pinned stack intent:
+Covers allow/block (with backend `/stats`), approval binding/replay, streaming `[DONE]`,
+cross-replica decisions, gateway stop, Redis `/readyz` 503, CP fail-closed 503.
 
-| Component | Version |
+## OIDC production profile
+
+```bash
+docker compose \
+  -f deploy/e2e/docker-compose.yaml \
+  -f deploy/e2e/docker-compose.oidc.yaml \
+  up --build -d
+./deploy/e2e/run_e2e_oidc.sh
+```
+
+Proves JWT middleware on `/v1/models` and governed chat: missing/invalid/expired/wrong
+issuer/audience → `401`; valid token → `200`.
+
+## Release / nightly (real Control Plane)
+
+```bash
+docker compose \
+  -f deploy/e2e/docker-compose.yaml \
+  -f deploy/e2e/docker-compose.oidc.yaml \
+  -f deploy/e2e/docker-compose.real-cp.yaml \
+  up --build -d
+./deploy/e2e/run_e2e_real_cp.sh
+```
+
+Uses `ghcr.io/justrunme/ai-infra-control-plane:1.3.0` by default (`CONTROL_PLANE_IMAGE` override).
+Workflow: `.github/workflows/platform-e2e-real-cp.yaml`.
+
+| Component | Version intent |
 | --- | --- |
-| Runtime gateway | image built from this repo (1.1+) |
-| Control Plane | mock stub compatible with CP evaluate/approve contract |
+| Runtime gateway | image built from this repo |
+| Control Plane | published `1.x` image (real-cp) or mock stub (PR) |
 | Redis | 7.4 |
-| Mock OpenAI | FastAPI stub |
-
-For Kind with real Control Plane images, pin `control-plane:1.x` and `runtime-platform:1.x` in your cluster manifests and reuse the same script assertions against the Service URLs.
+| Mock OpenAI / OIDC | FastAPI stubs |

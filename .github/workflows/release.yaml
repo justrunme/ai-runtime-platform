@@ -68,3 +68,17 @@ jobs:
 
       - name: Sign image (keyless)
         run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Package and push vLLM Helm chart to OCI
+        env:
+          CHART_OCI: ghcr.io/justrunme/charts
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Align chart version with the gateway release tag for supply-chain clarity.
+          helm package charts/vllm-runtime --version "$VERSION" --app-version "$VERSION"
+          helm push "vllm-runtime-${VERSION}.tgz" "oci://${CHART_OCI}"
+

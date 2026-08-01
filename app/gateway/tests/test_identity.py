@@ -84,6 +84,9 @@ def test_without_trusted_proxy_ignores_spoofed_headers(monkeypatch) -> None:
 def test_jwt_verify_fail_closed_on_invalid_token(monkeypatch) -> None:
     monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
     monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example/.well-known/jwks.json")
+    monkeypatch.delenv("OIDC_JWT_REQUIRE_ISS_AUD", raising=False)
+    monkeypatch.delenv("OIDC_JWT_ISSUER", raising=False)
+    monkeypatch.delenv("OIDC_JWT_AUDIENCE", raising=False)
     with pytest.raises(HTTPException) as error:
         resolve_workload_identity(
             _request(
@@ -107,6 +110,7 @@ def test_jwt_verify_fail_closed_on_invalid_token(monkeypatch) -> None:
 def test_jwt_verify_requires_bearer_token(monkeypatch) -> None:
     monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
     monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example/.well-known/jwks.json")
+    monkeypatch.delenv("OIDC_JWT_REQUIRE_ISS_AUD", raising=False)
     with pytest.raises(HTTPException) as error:
         resolve_workload_identity(
             _request({"x-ai-team": "finance"}),
@@ -124,6 +128,7 @@ def test_jwt_verify_requires_bearer_token(monkeypatch) -> None:
 def test_jwt_verify_ignores_client_identity_headers(monkeypatch) -> None:
     monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
     monkeypatch.delenv("OIDC_JWKS_URL", raising=False)
+    monkeypatch.delenv("OIDC_JWT_REQUIRE_ISS_AUD", raising=False)
     # Misconfigured JWKS should fail closed with 503, not accept headers.
     with pytest.raises(HTTPException) as error:
         resolve_workload_identity(

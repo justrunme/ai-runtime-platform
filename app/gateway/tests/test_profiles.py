@@ -51,9 +51,23 @@ def test_production_profile_requires_redis_and_control_plane(monkeypatch) -> Non
     monkeypatch.setenv("GATEWAY_PROFILE", "production")
     monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
     monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer/.well-known/jwks.json")
+    monkeypatch.setenv("OIDC_JWT_ISSUER", "https://issuer")
+    monkeypatch.setenv("OIDC_JWT_AUDIENCE", "ai-runtime")
     monkeypatch.delenv("CONTROL_PLANE_URL", raising=False)
     monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
     with pytest.raises(ValueError, match="CONTROL_PLANE_URL"):
+        GatewaySettings.from_environment()
+
+
+def test_production_profile_requires_issuer_and_audience(monkeypatch) -> None:
+    monkeypatch.setenv("GATEWAY_PROFILE", "production")
+    monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
+    monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer/.well-known/jwks.json")
+    monkeypatch.delenv("OIDC_JWT_ISSUER", raising=False)
+    monkeypatch.delenv("OIDC_JWT_AUDIENCE", raising=False)
+    monkeypatch.setenv("CONTROL_PLANE_URL", "http://cp")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    with pytest.raises(ValueError, match="OIDC_JWT_ISSUER"):
         GatewaySettings.from_environment()
 
 
@@ -61,6 +75,8 @@ def test_production_profile_accepts_full_config(monkeypatch) -> None:
     monkeypatch.setenv("GATEWAY_PROFILE", "production")
     monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
     monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer/.well-known/jwks.json")
+    monkeypatch.setenv("OIDC_JWT_ISSUER", "https://issuer")
+    monkeypatch.setenv("OIDC_JWT_AUDIENCE", "ai-runtime")
     monkeypatch.setenv("CONTROL_PLANE_URL", "http://cp")
     monkeypatch.setenv("REDIS_URL", "rediss://:pass@redis:6379/0")
     settings = GatewaySettings.from_environment()
@@ -68,3 +84,6 @@ def test_production_profile_accepts_full_config(monkeypatch) -> None:
     assert settings.require_shared_state is True
     assert settings.jwt_verify_enabled is True
     assert settings.control_plane_configured is True
+    assert settings.jwt_issuer == "https://issuer"
+    assert settings.jwt_audience == "ai-runtime"
+    assert settings.require_jwt_iss_aud is True

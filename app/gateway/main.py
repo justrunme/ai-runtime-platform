@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import Response
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -18,6 +18,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app.gateway.auth import PUBLIC_PATHS, install_authentication, request_is_authorized
 from app.gateway.config import (
     GatewaySettings,
     ModelRoute,
@@ -27,7 +28,7 @@ from app.gateway.config import (
     RoutingWeights,
 )
 from app.gateway.decisions import create_decision_store
-from app.gateway.errors import json_error_response, register_exception_handlers
+from app.gateway.errors import register_exception_handlers
 from app.gateway.governance import GovernanceConfig
 from app.gateway.metrics import (
     CHAT_COST,
@@ -85,6 +86,7 @@ __all__ = [
     "ModelRoute",
     "ModelTarget",
     "NoHealthyBackendError",
+    "PUBLIC_PATHS",
     "RedisHealthStore",
     "RouteTarget",
     "RoutingPolicy",
@@ -154,42 +156,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.client.aclose()
 
 
-PUBLIC_PATHS = frozenset({"/healthz", "/livez", "/readyz", "/metrics"})
-
-
-def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
-    """Accept a bearer token or x-api-key header against the configured key set."""
-    header = request.headers.get("authorization", "")
-    if header.startswith("Bearer ") and header.removeprefix("Bearer ").strip() in api_keys:
-        return True
-    return request.headers.get("x-api-key", "") in api_keys
-
-
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="1.3.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
-
-
-@app.middleware("http")
-async def enforce_api_key(request: Request, call_next):
-    """Require an API key for application routes when GATEWAY_API_KEYS is configured."""
-    settings: GatewaySettings | None = getattr(request.app.state, "settings", None)
-    api_keys = settings.api_keys if settings else frozenset()
-    if (
-        api_keys
-        and request.url.path not in PUBLIC_PATHS
-        and not request_is_authorized(request, api_keys)
-    ):
-        return json_error_response(
-            401,
-            code="invalid_api_key",
-            message="missing or invalid API key",
-            error_type="authentication_error",
-            request_id=request.headers.get("x-request-id"),
-        )
-    return await call_next(request)
-
+install_authentication(app)
 
 app.include_router(health_router)
 app.include_router(models_router.router)

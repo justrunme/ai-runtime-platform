@@ -30,7 +30,7 @@ kubectl apply -k deploy/overlays/demo-redis
 
 ## Redis durability contract
 
-Gateway Redis state (decisions, health signals, tenant counters) is **TTL / operational shared state**, not a permanent audit log. Restarting a non-durable Redis loses recent decisions and quota windows. Production must use managed Redis, Sentinel, or Cluster with persistence/backups appropriate to your RPO — see `deploy/overlays/redis-ha/README.md`.
+Gateway Redis state (decisions, health signals, tenant counters) is **TTL / operational shared state**, not a permanent audit log. Restarting a non-durable Redis loses recent decisions and quota windows. Production must use **managed Redis** with TLS/credentials and an RPO appropriate to your org — see `deploy/overlays/redis-ha/README.md` (documentation only; this repo does not operate Redis HA).
 
 ## Probes
 
