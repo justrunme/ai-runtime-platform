@@ -1,5 +1,10 @@
 # Upgrade guide
 
+## To v1.9.0
+
+1. Optional: set `USAGE_EVENTS_WEBHOOK_URL` for webhook delivery (OTLP attributes always available).
+2. See [usage events](usage-events.md).
+
 ## To v1.8.0
 
 1. Register MCP servers via `MCP_SERVER_REGISTRY` and inject credentials as env vars.

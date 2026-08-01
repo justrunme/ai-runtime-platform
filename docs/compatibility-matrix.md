@@ -10,6 +10,7 @@
 | 1.6.x | 1.6.x | Supported + tenant-scoped decisions/admission; CP tenant RBAC should align claim names |
 | 1.7.x | 1.7.x | Supported + global load-shed / circuit / drain; no CP API break |
 | 1.8.x | 1.8.x | Supported + MCP Streamable HTTP execution after evaluate-tool |
+| 1.9.x | 1.9.x | Supported + usage event emission for CP chargeback |
 | 2.x | 1.x | Requires migration guide |
 
 Frozen contracts:

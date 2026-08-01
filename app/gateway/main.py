@@ -81,6 +81,7 @@ from app.gateway.stores.health import (
 )
 from app.gateway.tenant import create_tenant_store
 from app.gateway.tenant_policy import load_tenant_policy_bundle
+from app.gateway.usage_events import UsageEventEmitter
 
 # Re-exports for existing tests and importers.
 __all__ = [
@@ -152,6 +153,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.retry_budget = RetryBudget()
     app.state.drain = DrainState()
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
+    app.state.usage_events = UsageEventEmitter(app.state.client)
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
     app.state.governance = GovernanceConfig.from_environment()
@@ -184,7 +186,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="1.8.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="1.9.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
 install_authentication(app)

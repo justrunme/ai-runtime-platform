@@ -45,6 +45,7 @@ from app.gateway.streaming import observe_upstream_stream, stream_headers
 from app.gateway.tenant import TenantAttributionBackend
 from app.gateway.tenant_context import resolve_tenant_id
 from app.gateway.tenant_policy import load_tenant_policy_bundle
+from app.gateway.usage_events import estimate_gpu_seconds, tokens_from_usage
 
 router = APIRouter(tags=["chat"])
 
@@ -490,6 +491,25 @@ async def _chat_completions_admitted(
                     request.app.state.client,
                     governance,
                     eval_payload,
+                )
+            )
+        usage_emitter = getattr(request.app.state, "usage_events", None)
+        if usage_emitter is not None:
+            in_tok, out_tok = tokens_from_usage(response.get("usage"))
+            duration_ms = round((time.monotonic() - started_at) * 1000, 2)
+            await usage_emitter.emit(
+                usage_emitter.build(
+                    tenant_id=tenant_id,
+                    request_id=request_id,
+                    decision_id=evidence.control_plane_decision_id if evidence else None,
+                    model=str(requested_model or model),
+                    backend=model,
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    estimated_cost_usd=estimated_cost,
+                    duration_ms=duration_ms,
+                    outcome="success",
+                    gpu_seconds=estimate_gpu_seconds(duration_ms),
                 )
             )
         if lease is not None:
