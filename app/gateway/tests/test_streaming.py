@@ -12,8 +12,8 @@ from app.gateway.main import (
     app,
     create_decision_store,
 )
-from app.gateway.tenant import create_tenant_store
 from app.gateway.streaming import StreamObservation, observe_upstream_stream
+from app.gateway.tenant import create_tenant_store
 
 
 @pytest.mark.anyio
