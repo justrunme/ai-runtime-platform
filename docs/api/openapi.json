@@ -58,7 +58,7 @@
   },
   "info": {
     "title": "AI Runtime Gateway",
-    "version": "1.0.0"
+    "version": "1.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -125,7 +125,10 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Mcp Tools"
+        "summary": "Mcp Tools",
+        "tags": [
+          "mcp"
+        ]
       }
     },
     "/mcp/tools/{tool_name}/call": {
@@ -162,7 +165,10 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Mcp Tool Call"
+        "summary": "Mcp Tool Call",
+        "tags": [
+          "mcp"
+        ]
       }
     },
     "/metrics": {
@@ -217,7 +223,10 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Backend Health"
+        "summary": "Backend Health",
+        "tags": [
+          "models"
+        ]
       }
     },
     "/v1/chat/completions": {
@@ -233,7 +242,10 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Chat Completions"
+        "summary": "Chat Completions",
+        "tags": [
+          "chat"
+        ]
       }
     },
     "/v1/decisions/{request_id}": {
@@ -274,7 +286,10 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Decision"
+        "summary": "Get Decision",
+        "tags": [
+          "decisions"
+        ]
       }
     },
     "/v1/intent/resolve": {
@@ -290,7 +305,10 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Intent Resolve"
+        "summary": "Intent Resolve",
+        "tags": [
+          "mcp"
+        ]
       }
     },
     "/v1/models": {
@@ -310,7 +328,10 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List Models"
+        "summary": "List Models",
+        "tags": [
+          "models"
+        ]
       }
     },
     "/v1/routes": {
@@ -331,7 +352,10 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List Routes"
+        "summary": "List Routes",
+        "tags": [
+          "models"
+        ]
       }
     }
   }

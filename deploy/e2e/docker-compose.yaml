@@ -1,0 +1,81 @@
+# Combined platform e2e: Control Plane stub + Redis + two Runtime gateways + mock OpenAI.
+#
+#   docker compose -f deploy/e2e/docker-compose.yaml up --build -d
+#   ./deploy/e2e/run_e2e.sh
+#   docker compose -f deploy/e2e/docker-compose.yaml down -v
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  mock-openai:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./mocks:/app/mocks:ro
+    command: >
+      bash -lc "pip install --quiet fastapi uvicorn &&
+      uvicorn mocks.mock_openai:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mock-control-plane:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./mocks:/app/mocks:ro
+    command: >
+      bash -lc "pip install --quiet fastapi uvicorn &&
+      uvicorn mocks.mock_control_plane:app --host 0.0.0.0 --port 8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  gateway-a:
+    build:
+      context: ../..
+    environment: &gateway_env
+      GATEWAY_PROFILE: internal
+      GATEWAY_API_KEYS: e2e-key
+      GATEWAY_REPLICAS: "2"
+      REQUIRE_SHARED_STATE: "true"
+      REDIS_URL: redis://redis:6379/0
+      CONTROL_PLANE_URL: http://mock-control-plane:8080
+      GOVERNANCE_ENFORCEMENT: "true"
+      GOVERNANCE_FAIL_OPEN: "false"
+      MODEL_TARGETS: '{"qwen":{"url":"http://mock-openai:8000/v1","input_cost_per_million":0,"output_cost_per_million":0,"health_path":"/health"}}'
+      OTEL_SDK_DISABLED: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-openai:
+        condition: service_healthy
+      mock-control-plane:
+        condition: service_healthy
+    ports:
+      - "18080:8080"
+
+  gateway-b:
+    build:
+      context: ../..
+    environment:
+      <<: *gateway_env
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-openai:
+        condition: service_healthy
+      mock-control-plane:
+        condition: service_healthy
+    ports:
+      - "18081:8080"

@@ -2,5 +2,5 @@ apiVersion: v2
 name: vllm-runtime
 description: Production-oriented GPU-scheduled vLLM OpenAI-compatible inference runtime
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "v0.26.0"

@@ -4,6 +4,11 @@ metadata:
   name: ai-runtime-gateway-config
   namespace: ai-runtime
 data:
+  GATEWAY_PROFILE: production
   GATEWAY_REPLICAS: "2"
   REQUIRE_SHARED_STATE: "true"
-  REDIS_URL: redis://redis.ai-runtime.svc.cluster.local:6379/0
+  REQUIRE_AUTH: "true"
+  REQUIRE_CONTROL_PLANE: "true"
+  OIDC_JWT_VERIFY: "true"
+  GOVERNANCE_ENFORCEMENT: "true"
+  GOVERNANCE_FAIL_OPEN: "false"

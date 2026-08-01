@@ -1,13 +1,14 @@
 # Streaming lifecycle
 
-Streaming chat completions are observed end-to-end. Success is recorded only after the body finishes (or `[DONE]`), not when upstream response headers arrive.
+Streaming chat completions are observed end-to-end. Success is recorded only after the body finishes, not when upstream response headers arrive.
 
 | Outcome | Meaning |
 | --- | --- |
-| `success` | Bytes delivered and stream closed cleanly |
-| `stream_interrupted` | Stream ended without usable payload |
-| `client_disconnected` | Client cancelled mid-stream |
-| `upstream_error` | Upstream failed before useful bytes |
+| `success` | Stream closed cleanly with `[DONE]` or non-empty OpenAI-compatible EOF |
+| `empty_stream` | Stream ended with zero bytes and no error |
+| `client_disconnected` | Client cancelled mid-stream (`CancelledError` / `GeneratorExit`) |
+| `upstream_error_before_first_byte` | Upstream failed before any bytes were sent |
+| `upstream_interrupted` | Upstream failed after at least one byte was sent |
 
 Metrics:
 

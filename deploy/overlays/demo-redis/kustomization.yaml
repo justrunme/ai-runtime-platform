@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Demo/reference Redis only. Not durable, not authenticated, single replica.
+# Do not use for production HA claims; wire an external Redis Secret instead.
+resources:
+  - redis.yaml

@@ -3,7 +3,23 @@ replicaCount: 1
 image:
   repository: vllm/vllm-openai
   tag: v0.26.0
+  # When set, renders repository@digest (immutable) instead of tag.
+  digest: ""
   pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  automountServiceAccountToken: false
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ai-runtime
+  egress:
+    - {}
 
 model:
   name: Qwen/Qwen2.5-7B-Instruct
@@ -27,6 +43,8 @@ persistence:
   storageClass: ""
   accessMode: ReadWriteOnce
   mountPath: /root/.cache/huggingface
+  annotations:
+    helm.sh/resource-policy: keep
 
 shm:
   enabled: true

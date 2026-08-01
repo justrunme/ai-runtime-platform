@@ -1,0 +1,12 @@
+# Multi-GPU tensor-parallel profile (example: 2 GPUs).
+replicaCount: 1
+model:
+  tensorParallelSize: 2
+shm:
+  enabled: true
+  sizeLimit: 16Gi
+resources:
+  requests:
+    nvidia.com/gpu: "2"
+  limits:
+    nvidia.com/gpu: "2"
