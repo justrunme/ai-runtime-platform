@@ -72,10 +72,20 @@ async def build_readiness_report(app: FastAPI) -> tuple[bool, dict[str, Any]]:
     backends: list[dict[str, Any]] = []
     available_routes = 0
     if health_store is not None and settings is not None:
-        for row in await health_store.snapshot():
-            backends.append(row)
-            if row.get("status") != "unhealthy":
-                available_routes += 1
+        try:
+            for row in await health_store.snapshot():
+                backends.append(row)
+                if row.get("status") != "unhealthy":
+                    available_routes += 1
+        except Exception as error:  # noqa: BLE001 - readiness must not 500
+            checks["backends_error"] = str(error)
+            if redis_configured or redis_required:
+                redis_ok = False
+                checks["redis"] = {
+                    "ok": False,
+                    "required": redis_required,
+                    "configured": redis_configured,
+                }
     checks["backends"] = {
         "available_routes": available_routes,
         "total": len(backends),

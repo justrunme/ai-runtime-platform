@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -12,8 +14,30 @@ from app.gateway.main import (
     app,
     create_decision_store,
 )
-from app.gateway.streaming import StreamObservation, observe_upstream_stream
+from app.gateway.streaming import (
+    StreamObservation,
+    classify_stream_outcome,
+    observe_upstream_stream,
+)
 from app.gateway.tenant import create_tenant_store
+
+
+def test_classify_stream_outcome_matrix() -> None:
+    assert classify_stream_outcome(bytes_sent=10, saw_done=True, error=None) == "success"
+    assert classify_stream_outcome(bytes_sent=10, saw_done=False, error=None) == "success"
+    assert classify_stream_outcome(bytes_sent=0, saw_done=False, error=None) == "empty_stream"
+    assert (
+        classify_stream_outcome(bytes_sent=0, saw_done=False, error=httpx.ReadError("boom"))
+        == "upstream_error_before_first_byte"
+    )
+    assert (
+        classify_stream_outcome(bytes_sent=4, saw_done=False, error=httpx.ReadError("boom"))
+        == "upstream_interrupted"
+    )
+    assert (
+        classify_stream_outcome(bytes_sent=4, saw_done=False, error=asyncio.CancelledError())
+        == "client_disconnected"
+    )
 
 
 @pytest.mark.anyio
@@ -47,6 +71,63 @@ async def test_observe_upstream_stream_marks_success_on_done() -> None:
     assert observations[0].outcome == "success"
     assert observations[0].saw_done is True
     assert observations[0].ttft_ms is not None
+
+
+@pytest.mark.anyio
+async def test_observe_upstream_stream_marks_upstream_interrupted() -> None:
+    class BrokenResponse:
+        def __init__(self) -> None:
+            self._chunks = [b"data: one\n\n", b"data: two\n\n"]
+
+        async def aiter_bytes(self):
+            yield self._chunks[0]
+            yield self._chunks[1]
+            raise httpx.ReadError("upstream dropped")
+
+        async def aclose(self) -> None:
+            return None
+
+    observations: list[StreamObservation] = []
+
+    async def on_complete(observation: StreamObservation) -> None:
+        observations.append(observation)
+
+    with pytest.raises(httpx.ReadError):
+        async for _ in observe_upstream_stream(
+            BrokenResponse(),  # type: ignore[arg-type]
+            selected_backend="qwen",
+            on_complete=on_complete,
+        ):
+            pass
+
+    assert observations[0].outcome == "upstream_interrupted"
+    assert observations[0].bytes_sent > 0
+
+
+@pytest.mark.anyio
+async def test_observe_upstream_stream_marks_client_disconnect() -> None:
+    class CancelledResponse:
+        async def aiter_bytes(self):
+            yield b"data: partial\n\n"
+            raise asyncio.CancelledError()
+
+        async def aclose(self) -> None:
+            return None
+
+    observations: list[StreamObservation] = []
+
+    async def on_complete(observation: StreamObservation) -> None:
+        observations.append(observation)
+
+    with pytest.raises(asyncio.CancelledError):
+        async for _ in observe_upstream_stream(
+            CancelledResponse(),  # type: ignore[arg-type]
+            selected_backend="qwen",
+            on_complete=on_complete,
+        ):
+            pass
+
+    assert observations[0].outcome == "client_disconnected"
 
 
 @pytest.mark.anyio

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -41,6 +42,32 @@ class StreamObservation:
 OnComplete = Callable[[StreamObservation], Awaitable[None]]
 
 
+def classify_stream_outcome(
+    *,
+    bytes_sent: int,
+    saw_done: bool,
+    error: BaseException | None,
+) -> str:
+    """Classify terminal stream state for honest telemetry."""
+    if error is None:
+        if saw_done:
+            return "success"
+        if bytes_sent == 0:
+            return "empty_stream"
+        # Some OpenAI-compatible backends omit [DONE]; non-empty EOF is still success.
+        return "success"
+
+    if isinstance(error, (asyncio.CancelledError, GeneratorExit)):
+        return "client_disconnected"
+    if isinstance(error, httpx.HTTPError):
+        if bytes_sent == 0:
+            return "upstream_error_before_first_byte"
+        return "upstream_interrupted"
+    if bytes_sent == 0:
+        return "upstream_error_before_first_byte"
+    return "upstream_interrupted"
+
+
 async def observe_upstream_stream(
     upstream: httpx.Response,
     *,
@@ -52,7 +79,7 @@ async def observe_upstream_stream(
     first_byte_at: float | None = None
     bytes_sent = 0
     saw_done = False
-    outcome = "stream_interrupted"
+    error: BaseException | None = None
     try:
         async for chunk in upstream.aiter_bytes():
             if first_byte_at is None:
@@ -64,17 +91,11 @@ async def observe_upstream_stream(
             if b"[DONE]" in chunk:
                 saw_done = True
             yield chunk
-        outcome = "success" if bytes_sent > 0 else "stream_interrupted"
-    except GeneratorExit:
-        outcome = "client_disconnected"
-        raise
-    except BaseException:
-        if bytes_sent == 0:
-            outcome = "upstream_error"
-        elif outcome == "stream_interrupted":
-            outcome = "client_disconnected"
+    except BaseException as exc:  # noqa: BLE001 - must classify every terminal path
+        error = exc
         raise
     finally:
+        outcome = classify_stream_outcome(bytes_sent=bytes_sent, saw_done=saw_done, error=error)
         duration_s = max(0.0, time.monotonic() - started_at)
         observation = StreamObservation(
             outcome=outcome,

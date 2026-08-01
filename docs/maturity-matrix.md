@@ -5,7 +5,10 @@
 | OpenAI chat/completions gateway | Supported | Frozen OpenAPI, SDK tests |
 | Control Plane v1 evaluate/approval | Supported | `x-ai-approval-id` redemption |
 | JWT/JWKS identity | Supported | Fail-closed when enabled |
-| Redis shared state (HA) | Supported | Required for replicas > 1 |
+| Redis shared state (HA) | Supported | Required for replicas > 1; in-cluster demo Redis is reference-only |
+| Production profile fail-closed | Supported | OIDC/JWKS + Control Plane + Redis Secrets |
+| Platform combined e2e | Supported | `deploy/e2e` + CI |
+| OpenAI error envelope | Supported | Top-level `{error}` contract tests |
 | `/livez` `/readyz` | Supported | Production probes |
 | Observed streaming lifecycle | Supported | TTFT + terminal outcomes |
 | vLLM Helm chart | Supported | Production values profile |

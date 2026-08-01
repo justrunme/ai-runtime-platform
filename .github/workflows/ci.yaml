@@ -47,6 +47,8 @@ jobs:
         run: |
           kubectl kustomize deploy/overlays/single-node | kubeconform -strict -ignore-missing-schemas -summary
           kubectl kustomize deploy/overlays/production | kubeconform -strict -ignore-missing-schemas -summary
+          kubectl kustomize deploy/overlays/demo-redis | kubeconform -strict -ignore-missing-schemas -summary
+          kubectl kustomize deploy/overlays/redis-ha | kubeconform -strict -ignore-missing-schemas -summary
 
   docker:
     runs-on: ubuntu-latest
@@ -64,3 +66,20 @@ jobs:
           tags: ai-runtime-gateway:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  platform-e2e:
+    runs-on: ubuntu-latest
+    needs: [python, docker]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Start platform stack
+        run: docker compose -f deploy/e2e/docker-compose.yaml up --build -d
+      - name: Run golden paths
+        run: ./deploy/e2e/run_e2e.sh
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose -f deploy/e2e/docker-compose.yaml logs --no-color | tail -n 400
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/e2e/docker-compose.yaml down -v

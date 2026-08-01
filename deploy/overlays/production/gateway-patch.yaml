@@ -9,18 +9,44 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: ghcr.io/justrunme/ai-runtime-platform:1.0.0
+          image: ghcr.io/justrunme/ai-runtime-platform:1.2.0
           env:
+            - name: GATEWAY_PROFILE
+              value: production
             - name: GATEWAY_REPLICAS
               value: "2"
             - name: REQUIRE_SHARED_STATE
               value: "true"
+            - name: REQUIRE_AUTH
+              value: "true"
+            - name: REQUIRE_CONTROL_PLANE
+              value: "true"
+            - name: OIDC_JWT_VERIFY
+              value: "true"
+            - name: GOVERNANCE_ENFORCEMENT
+              value: "true"
+            - name: GOVERNANCE_FAIL_OPEN
+              value: "false"
+            - name: CONTROL_PLANE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ai-runtime-control-plane
+                  key: url
+            - name: OIDC_JWKS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ai-runtime-oidc
+                  key: jwks-url
             - name: REDIS_URL
-              value: redis://redis.ai-runtime.svc.cluster.local:6379/0
+              valueFrom:
+                secretKeyRef:
+                  name: ai-runtime-redis
+                  key: url
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_SERVICE_NAME
               value: ai-runtime-gateway
+            # Optional secondary auth. Production requires OIDC/JWKS via profile guards.
             - name: GATEWAY_API_KEYS
               valueFrom:
                 secretKeyRef:

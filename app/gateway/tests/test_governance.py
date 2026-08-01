@@ -420,5 +420,8 @@ async def test_chat_completions_returns_403_when_governance_blocks() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
         response = await client.post("/v1/chat/completions", json={"model": "qwen", "messages": []})
     assert response.status_code == 403
-    assert response.json()["detail"]["final_verdict"] == "block"
+    body = response.json()
+    assert "detail" not in body
+    assert body["final_verdict"] == "block"
+    assert body["error"]["code"] == "governance_blocked"
     await upstream.aclose()
