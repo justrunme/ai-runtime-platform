@@ -13,9 +13,9 @@
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
-> **Execution Plane** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — OpenAI-compatible runtime, governed inference boundary, and intent proxy for private AI on Kubernetes.
+> **Execution Plane v1.0** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — production-oriented OpenAI-compatible runtime boundary for governed private AI on Kubernetes.
 
-This repository is the **Execution Plane**: routing, shadow traffic, cost attribution, Control Plane v1 approval/enforcement, MCP governance reference endpoint, intent proxying, and workload identity. See [runtime enforcement mode](docs/runtime-enforcement-mode.md) and the [platform roadmap](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md).
+This repository is the **Execution Plane**: routing, HA shared state, observed streaming, Control Plane v1 approval/enforcement, workload identity, and vLLM serving. See [maturity matrix](docs/maturity-matrix.md), [SLO](docs/slo.md), [upgrade guide](docs/upgrade-guide.md), and [runtime enforcement mode](docs/runtime-enforcement-mode.md).
 
 ## Platform Signals
 
