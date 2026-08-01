@@ -8,6 +8,7 @@
 | 1.3.x / 1.4.x | 1.4.x | Supported + enforcement evidence headers; signed `decision_token` optional until CP emits it |
 | 1.5.x | 1.5.x | Supported + `/v1/runtime/status` and `/v1/runtime/verify` for remediation close-loop |
 | 1.6.x | 1.6.x | Supported + tenant-scoped decisions/admission; CP tenant RBAC should align claim names |
+| 1.7.x | 1.7.x | Supported + global load-shed / circuit / drain; no CP API break |
 | 2.x | 1.x | Requires migration guide |
 
 Frozen contracts:

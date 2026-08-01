@@ -92,8 +92,20 @@ async def build_readiness_report(app: FastAPI) -> tuple[bool, dict[str, Any]]:
         "items": backends,
     }
 
-    ready = route_ok and redis_ok and control_plane_ok and (available_routes > 0 or not backends)
+    drain = getattr(app.state, "drain", None)
+    draining = bool(drain and drain.draining)
+    checks["drain"] = {"ok": not draining, "draining": draining}
+
+    ready = (
+        route_ok
+        and redis_ok
+        and control_plane_ok
+        and not draining
+        and (available_routes > 0 or not backends)
+    )
     status = "ready" if ready else "not_ready"
-    if ready and backends and available_routes < len(backends):
+    if draining:
+        status = "draining"
+    elif ready and backends and available_routes < len(backends):
         status = "degraded"
     return ready, {"status": status, "checks": checks}

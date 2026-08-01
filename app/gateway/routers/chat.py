@@ -92,10 +92,25 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             request_id=request_id,
         )
 
+    drain = getattr(request.app.state, "drain", None)
+    if drain is not None:
+        drain.reject_if_draining()
+
+    global_admission = getattr(request.app.state, "global_admission", None)
+    global_held = False
+    if global_admission is not None:
+        await global_admission.acquire()
+        global_held = True
+
     admission = getattr(request.app.state, "admission", None)
     lease: AdmissionLease | None = None
     if admission is not None:
-        lease = await admission.acquire_lease(tenant_id)
+        try:
+            lease = await admission.acquire_lease(tenant_id)
+        except Exception:
+            if global_held and global_admission is not None:
+                await global_admission.release()
+            raise
     try:
         return await _chat_completions_admitted(
             request,
@@ -105,10 +120,13 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             tenant_id=tenant_id,
             requested_model=requested_model,
             lease=lease,
+            global_admission=global_admission if global_held else None,
         )
     except Exception:
         if lease is not None:
             await lease.release()
+        if global_held and global_admission is not None:
+            await global_admission.release()
         raise
 
 
@@ -121,6 +139,7 @@ async def _chat_completions_admitted(
     tenant_id: str,
     requested_model: object,
     lease: AdmissionLease | None,
+    global_admission: object | None,
 ) -> JSONResponse | StreamingResponse:
     governance: GovernanceConfig | None = request.app.state.governance
     tenant_store: TenantAttributionBackend | None = getattr(
@@ -177,7 +196,11 @@ async def _chat_completions_admitted(
             health_rerouted = False
         else:
             model, health_rerouted = await select_health_aware_backend(
-                route, model, fallback_model, request.app.state.backend_health
+                route,
+                model,
+                fallback_model,
+                request.app.state.backend_health,
+                circuit_breaker=getattr(request.app.state, "circuit_breaker", None),
             )
             cost_rerouted = False
     except NoHealthyBackendError as error:
@@ -311,6 +334,9 @@ async def _chat_completions_admitted(
                     finally:
                         if lease is not None:
                             await lease.release()
+                        release = getattr(global_admission, "release", None)
+                        if release is not None:
+                            await release()
 
                 return StreamingResponse(
                     observe_upstream_stream(
@@ -330,6 +356,8 @@ async def _chat_completions_admitted(
                 target,
                 fallback_model,
                 fallback_target,
+                circuit_breaker=getattr(request.app.state, "circuit_breaker", None),
+                retry_budget=getattr(request.app.state, "retry_budget", None),
             )
             for failed_model in failed_models:
                 await request.app.state.backend_health.record_request(failed_model, success=False)
@@ -466,4 +494,7 @@ async def _chat_completions_admitted(
             )
         if lease is not None:
             await lease.release()
+        release = getattr(global_admission, "release", None)
+        if release is not None:
+            await release()
         return JSONResponse(response, headers=headers)

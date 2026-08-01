@@ -48,14 +48,30 @@ async def select_health_aware_backend(
     primary_model: str,
     fallback_model: str | None,
     health_store: HealthStore,
+    circuit_breaker: object | None = None,
 ) -> tuple[str, bool]:
     """Skip an unhealthy primary before issuing an inference request."""
+
+    def circuit_allows(model: str) -> bool:
+        if circuit_breaker is None:
+            return True
+        allow = getattr(circuit_breaker, "allow", None)
+        return True if allow is None else bool(allow(model))
+
     if route is None or route.min_health_score is None:
+        if circuit_allows(primary_model):
+            return primary_model, False
+        if fallback_model is not None and circuit_allows(fallback_model):
+            return fallback_model, True
+        raise NoHealthyBackendError("no backend available (circuit open)")
+    if circuit_allows(primary_model) and await health_store.meets_score(
+        primary_model, route.min_health_score
+    ):
         return primary_model, False
-    if await health_store.meets_score(primary_model, route.min_health_score):
-        return primary_model, False
-    if fallback_model is not None and await health_store.meets_score(
-        fallback_model, route.min_health_score
+    if (
+        fallback_model is not None
+        and circuit_allows(fallback_model)
+        and await health_store.meets_score(fallback_model, route.min_health_score)
     ):
         return fallback_model, True
     raise NoHealthyBackendError("no backend meets the route health threshold")

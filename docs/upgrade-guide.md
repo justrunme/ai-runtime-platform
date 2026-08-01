@@ -1,5 +1,11 @@
 # Upgrade guide
 
+## To v1.7.0
+
+1. Tune `GATEWAY_MAX_INFLIGHT` / `GATEWAY_MAX_QUEUED` for GPU/node capacity.
+2. Expect `/readyz` to flip to draining on SIGTERM before connections drain.
+3. See [resilience](resilience.md).
+
 ## To v1.6.0
 
 1. Decision Redis keys are tenant-scoped; flush or accept dual-read of legacy `arp:decision:*`.
