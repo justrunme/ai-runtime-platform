@@ -11,7 +11,14 @@ permissions:
   attestations: write
 
 jobs:
+  # Compatibility proof must pass before publishing image/chart.
+  real-control-plane:
+    uses: ./.github/workflows/platform-e2e-real-cp-reusable.yaml
+    with:
+      control_plane_image: ghcr.io/justrunme/ai-infra-control-plane:1.3.0
+
   release:
+    needs: [real-control-plane]
     runs-on: ubuntu-latest
     env:
       IMAGE: ghcr.io/${{ github.repository }}
@@ -81,4 +88,3 @@ jobs:
           # Align chart version with the gateway release tag for supply-chain clarity.
           helm package charts/vllm-runtime --version "$VERSION" --app-version "$VERSION"
           helm push "vllm-runtime-${VERSION}.tgz" "oci://${CHART_OCI}"
-

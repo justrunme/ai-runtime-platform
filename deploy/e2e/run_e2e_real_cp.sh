@@ -19,6 +19,13 @@ mint_token() {
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
 }
 
+fail_http() {
+  local label="$1" code="$2" file="$3"
+  echo "${label}: unexpected HTTP ${code}" >&2
+  cat "$file" >&2 || true
+  exit 1
+}
+
 echo "== wait for stack =="
 for _ in $(seq 1 90); do
   if curl -fsS "$A/readyz" >/dev/null && curl -fsS "$CP/healthz" >/dev/null; then
@@ -30,7 +37,10 @@ curl -fsS "$A/readyz" >/dev/null
 curl -fsS "$CP/healthz" >/dev/null
 
 dev_token="$(printf '%s' '{"environment":"development","tool_access":false,"write_permission":false}' | mint_token)"
-prod_token="$(printf '%s' '{"environment":"production","tool_access":true,"write_permission":true,"namespace":"ai-prod"}' | mint_token)"
+prod_token="$(printf '%s' '{"environment":"production","tool_access":true,"write_permission":true,"namespace":"ai-prod","groups":["platform"]}' | mint_token)"
+# Approver token for Control Plane approve/reject when OIDC is enabled on CP.
+# Published CP image defaults to demo mode (no JWT verify); still send identity.
+approver_token="$(printf '%s' '{"sub":"secops","preferred_username":"secops","groups":["ai-approvers","secops"]}' | mint_token)"
 
 echo "== real CP allow (development) =="
 curl -fsS -H "Authorization: Bearer ${dev_token}" -H "Content-Type: application/json" \
@@ -42,18 +52,35 @@ apr_code="$(curl -sS -o /tmp/real-apr.json -w '%{http_code}' \
   -H "Authorization: Bearer ${prod_token}" -H "Content-Type: application/json" \
   -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"need approval"}]}' \
   "$A/v1/chat/completions")"
-[[ "$apr_code" == "409" ]] || { echo "expected 409 got $apr_code" >&2; cat /tmp/real-apr.json; exit 1; }
-approval_id="$(python3 -c 'import json; print(json.load(open("/tmp/real-apr.json"))["approval_id"])')"
-policy_digest="$(python3 -c 'import json; print(json.load(open("/tmp/real-apr.json")).get("policy_digest") or "")')"
-request_digest="$(python3 -c 'import json; print(json.load(open("/tmp/real-apr.json")).get("request_digest") or "")')"
-[[ -n "$approval_id" ]]
-[[ -n "$policy_digest" ]]
-[[ -n "$request_digest" ]]
+[[ "$apr_code" == "409" ]] || fail_http "approval_required" "$apr_code" /tmp/real-apr.json
+python3 - <<'PY'
+import json, sys
+body = json.load(open("/tmp/real-apr.json"))
+assert body.get("final_verdict") == "approval_required", body
+assert body.get("approval_id"), body
+assert body.get("decision_id"), body
+assert body.get("policy_digest"), body
+# request_digest may be absent on evaluate response; verify via CP decision API.
+open("/tmp/real-approval-id.txt", "w").write(body["approval_id"])
+open("/tmp/real-decision-id.txt", "w").write(body["decision_id"])
+print("approval_id", body["approval_id"])
+print("decision_id", body["decision_id"])
+print("policy_digest", body["policy_digest"])
+PY
+approval_id="$(cat /tmp/real-approval-id.txt)"
+decision_id="$(cat /tmp/real-decision-id.txt)"
+
+echo "== durable decision has request_digest on Control Plane =="
+decision="$(curl -fsS "$CP/governance/decisions/${decision_id}")"
+echo "$decision" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("request_digest"), d; print(d["request_digest"][:16], "...")'
 
 echo "== approve at real Control Plane =="
-curl -fsS -H 'Content-Type: application/json' \
+approve_code="$(curl -sS -o /tmp/real-approve.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${approver_token}" \
+  -H 'Content-Type: application/json' \
   -d '{"reviewer":"secops","comment":"e2e ok"}' \
-  "$CP/approvals/${approval_id}/approve" >/dev/null
+  "$CP/approvals/${approval_id}/approve")"
+[[ "$approve_code" == "200" ]] || fail_http "approve" "$approve_code" /tmp/real-approve.json
 
 echo "== retry with approval → inference =="
 curl -fsS -H "Authorization: Bearer ${prod_token}" -H "Content-Type: application/json" \
@@ -67,25 +94,27 @@ replay_code="$(curl -sS -o /tmp/real-replay.json -w '%{http_code}' \
   -H "x-ai-approval-id: ${approval_id}" \
   -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"need approval"}]}' \
   "$A/v1/chat/completions")"
-# After consumption CP should not allow again with same approval id.
-[[ "$replay_code" != "200" ]] || { echo "replay unexpectedly allowed" >&2; cat /tmp/real-replay.json; exit 1; }
+[[ "$replay_code" != "200" ]] || fail_http "replay unexpectedly allowed" "$replay_code" /tmp/real-replay.json
 
 echo "== body change after approval rejected =="
 apr2_code="$(curl -sS -o /tmp/real-apr2.json -w '%{http_code}' \
   -H "Authorization: Bearer ${prod_token}" -H "Content-Type: application/json" \
   -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"need approval again"}]}' \
   "$A/v1/chat/completions")"
-[[ "$apr2_code" == "409" ]] || { echo "expected 409 got $apr2_code" >&2; exit 1; }
+[[ "$apr2_code" == "409" ]] || fail_http "second approval_required" "$apr2_code" /tmp/real-apr2.json
 approval_id2="$(python3 -c 'import json; print(json.load(open("/tmp/real-apr2.json"))["approval_id"])')"
-curl -fsS -H 'Content-Type: application/json' \
+approve2_code="$(curl -sS -o /tmp/real-approve2.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${approver_token}" \
+  -H 'Content-Type: application/json' \
   -d '{"reviewer":"secops","comment":"e2e"}' \
-  "$CP/approvals/${approval_id2}/approve" >/dev/null
+  "$CP/approvals/${approval_id2}/approve")"
+[[ "$approve2_code" == "200" ]] || fail_http "approve2" "$approve2_code" /tmp/real-approve2.json
 mismatch_code="$(curl -sS -o /tmp/real-mismatch.json -w '%{http_code}' \
   -H "Authorization: Bearer ${prod_token}" -H "Content-Type: application/json" \
   -H "x-ai-approval-id: ${approval_id2}" \
   -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"CHANGED BODY"}]}' \
   "$A/v1/chat/completions")"
-[[ "$mismatch_code" != "200" ]] || { echo "changed body unexpectedly allowed" >&2; exit 1; }
+[[ "$mismatch_code" != "200" ]] || fail_http "changed body unexpectedly allowed" "$mismatch_code" /tmp/real-mismatch.json
 
 echo "== runtime pod restart keeps shared decision =="
 req_id="real-dec-$(date +%s)"
@@ -98,7 +127,7 @@ for _ in $(seq 1 60); do
   curl -fsS "$A/readyz" >/dev/null && break
   sleep 2
 done
-curl -fsS -H "Authorization: Bearer ${dev_token}" "$B/v1/decisions/${req_id}" | grep -q llama3.1:8b
+curl -fsS -H "Authorization: Bearer ${dev_token}" "$B/v1/decisions/${req_id}" | grep -q 'llama3.1:8b'
 
 echo "== Control Plane restart =="
 "${COMPOSE[@]}" restart control-plane
