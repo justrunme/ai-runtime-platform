@@ -430,15 +430,23 @@ docs/                 Architecture and operational decisions
 ## Project status
 
 Runtime v2.3 is feature-complete for the declared Supported scope.
+Recommended pair: **Control Plane v2.4.x + Runtime v2.3.x**
+([compatibility matrix](docs/compatibility-matrix.md)).
 The project is now maintenance-oriented.
 
-Explicitly deferred:
+### Honest limitations
 
-- fleet-wide distributed admission;
-- durable usage event broker;
-- shared MCP session storage;
-- tenant upstream credential resolution;
-- automated canary promotion and rollback.
+| Limitation | Status |
+| --- | --- |
+| Actual GitOps / Argo sync in verify | Control Plane reports `gitops_sync: not_checked` |
+| Usage event queue after hard pod loss | Best-effort, in-memory buffer (not a billing ledger) |
+| Fleet-wide concurrency admission | Per-replica limits (Redis shares health/attribution, not distributed semaphores) |
+| MCP session state | Process-local — use sticky sessions or a shared store for multi-replica |
+| Tenant upstream credentials | Experimental / reserved (`upstreamCredentialRef`) |
+| Billing / chargeback ledger | Not implemented — cost stays attribution-grade |
+| Automated canary promotion/rollback | Deferred |
+
+See also [maturity matrix](docs/maturity-matrix.md).
 
 ## Security note
 

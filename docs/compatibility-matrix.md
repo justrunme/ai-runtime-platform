@@ -1,11 +1,17 @@
 # Control Plane ↔ Runtime compatibility
 
+Canonical closed-loop pair for operators and release gates:
+
 | Control Plane | Runtime | Status |
 | --- | --- | --- |
 | **2.4.x** | **2.3.x** | **Current stable pair** — release gate + evidence/verify/tenant/MCP/capability digests |
 | 2.0.x–2.3.x | 2.3.x | Backward-compatible 2.x contract (evaluate, approval, verify, MCP) |
 | 1.3.x | 2.3.x | Legacy compatibility gate (evaluate + approval) |
 | 2.x | 1.x | Migration required — see [upgrade guide](upgrade-guide.md) |
+
+Control Plane docs mirror this pair in
+[maturity-boundary](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/maturity-boundary.md)
+and the Control Plane README.
 
 Historical pairs (still documented for upgrades):
 
