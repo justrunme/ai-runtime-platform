@@ -102,6 +102,12 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             ),
             enforcement_outcome="executed",
         )
+        runtime_config = getattr(request.app.state, "runtime_config", None)
+        if runtime_config is not None and evidence is not None:
+            runtime_config.policy.observe(
+                bundle_id=evidence.policy_bundle_id,
+                digest=evidence.policy_digest,
+            )
     else:
         evidence = evidence_from_governance(None, enforcement_outcome="executed")
     route = settings.model_routes.get(requested_model)

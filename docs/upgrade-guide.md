@@ -1,5 +1,12 @@
 # Upgrade guide
 
+## To v1.5.0
+
+1. New authenticated endpoints: `GET /v1/runtime/status`, `POST /v1/runtime/verify`.
+2. Optionally set `GATEWAY_CONFIG_GENERATION` from the GitOps revision and `GATEWAY_INSTANCE_ID` for multi-replica evidence.
+3. Control Plane remediation flows should call verify after sync instead of assuming pod restart equals applied config.
+4. See [runtime status](runtime-status.md).
+
 ## To v1.4.0
 
 1. No OpenAI response body changes. Clients may read new evidence headers.

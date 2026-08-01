@@ -42,7 +42,9 @@ from app.gateway.routers import chat as chat_router
 from app.gateway.routers import decisions as decisions_router
 from app.gateway.routers import mcp as mcp_router
 from app.gateway.routers import models as models_router
+from app.gateway.routers import runtime as runtime_router
 from app.gateway.routers.health import router as health_router
+from app.gateway.runtime_config import RuntimeConfigState
 from app.gateway.services.completions import (
     complete_shadow_traffic,
     observe_completion,
@@ -134,6 +136,7 @@ def configure_tracing() -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = GatewaySettings.from_environment()
     app.state.settings = settings
+    app.state.runtime_config = RuntimeConfigState.from_settings(settings)
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
@@ -157,7 +160,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="1.4.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="1.5.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
 install_authentication(app)
@@ -167,6 +170,7 @@ app.include_router(models_router.router)
 app.include_router(decisions_router.router)
 app.include_router(mcp_router.router)
 app.include_router(chat_router.router)
+app.include_router(runtime_router.router)
 
 
 @app.get("/metrics")
