@@ -19,6 +19,11 @@ from app.gateway.evaluations import (
     response_evaluation_enabled,
     submit_response_evaluation,
 )
+from app.gateway.evidence import (
+    EnforcementEvidence,
+    apply_evidence_headers,
+    evidence_from_governance,
+)
 from app.gateway.governance import GovernanceConfig, enforce_governance
 from app.gateway.services.completions import (
     observe_completion,
@@ -83,16 +88,22 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             team, input_tokens=input_tokens or 1, output_tokens=output_tokens
         )
         requests_last_minute, tokens_today = await tenant_store.usage_snapshot(team)
+    evidence: EnforcementEvidence | None = None
     if governance is not None:
-        await enforce_governance(
-            request.app.state.client,
-            governance,
-            request,
-            payload,
-            settings.model_targets,
-            requests_last_minute=requests_last_minute,
-            tokens_today=tokens_today,
+        evidence = evidence_from_governance(
+            await enforce_governance(
+                request.app.state.client,
+                governance,
+                request,
+                payload,
+                settings.model_targets,
+                requests_last_minute=requests_last_minute,
+                tokens_today=tokens_today,
+            ),
+            enforcement_outcome="executed",
         )
+    else:
+        evidence = evidence_from_governance(None, enforcement_outcome="executed")
     route = settings.model_routes.get(requested_model)
     model, fallback_model = resolve_route(route, request_id, requested_model)
     try:
@@ -172,11 +183,17 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                     health_rerouted=health_rerouted,
                     fallback_used=stream_fallback_used,
                 )
-                response_headers = stream_headers(
-                    headers, selected_backend=model, fallback_used=fallback_used
+                response_headers = apply_evidence_headers(
+                    stream_headers(headers, selected_backend=model, fallback_used=fallback_used),
+                    evidence,
                 )
                 span.set_attribute("ai.runtime.routing_reason", reason)
                 span.set_attribute("ai.runtime.selected_backend", model)
+                if evidence and evidence.control_plane_decision_id:
+                    span.set_attribute(
+                        "ai.runtime.control_plane_decision_id",
+                        evidence.control_plane_decision_id,
+                    )
                 if shadow_model and shadow_target:
                     schedule_shadow_traffic(
                         request.app.state.decision_store,
@@ -194,6 +211,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 selected_model = model
                 health_store = request.app.state.backend_health
                 decision_store = request.app.state.decision_store
+                evidence_fields = evidence.as_decision_fields() if evidence else {}
 
                 async def _finalize_stream(observation) -> None:
                     success = observation.outcome == "success"
@@ -224,6 +242,10 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                         shadow_backend=shadow_model,
                         stream_outcome=observation.outcome,
                         stream_ttft_ms=observation.ttft_ms,
+                        **evidence_fields,
+                        enforcement_outcome=(
+                            "executed" if success else f"stream_{observation.outcome}"
+                        ),
                     )
 
                 return StreamingResponse(
@@ -276,6 +298,8 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 fallback_used=False,
                 health_score=(await request.app.state.backend_health.routing_signal(model))[0],
                 duration_ms=round((time.monotonic() - started_at) * 1000, 2),
+                **(evidence.as_decision_fields() if evidence else {}),
+                enforcement_outcome="upstream_error",
             )
             raise api_error(
                 502,
@@ -298,6 +322,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
         headers["x-routing-reason"] = reason
         headers["x-fallback-used"] = "true" if fallback_flag else "false"
         headers["x-ai-health-score"] = str(health_score)
+        apply_evidence_headers(headers, evidence)
         if estimated_cost is not None:
             headers["x-ai-estimated-cost-usd"] = str(estimated_cost)
             span.set_attribute("gen_ai.usage.cost_usd", estimated_cost)
@@ -352,6 +377,8 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             duration_ms=round((time.monotonic() - started_at) * 1000, 2),
             shadow_backend=shadow_model,
             estimated_cost=estimated_cost,
+            **(evidence.as_decision_fields() if evidence else {}),
+            enforcement_outcome="executed",
         )
         if governance is not None and response_evaluation_enabled():
             team = request.headers.get("x-ai-team", governance.default_team)

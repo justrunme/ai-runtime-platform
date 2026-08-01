@@ -329,6 +329,10 @@ async def enforce_governance(
             ),
         ) from error
 
+    from app.gateway.decision_token import bind_signed_decision
+    from app.gateway.evidence import apply_evidence_headers, evidence_from_governance
+
+    result = await bind_signed_decision(result)
     verdict = str(result.get("final_verdict", "unknown"))
     GOVERNANCE_DECISIONS.labels(verdict=verdict, team=body["team"]).inc()
 
@@ -340,13 +344,17 @@ async def enforce_governance(
                 message="governance blocked the request",
                 result=result,
             ),
+            headers=apply_evidence_headers(
+                {},
+                evidence_from_governance(result, enforcement_outcome="blocked"),
+            )
+            or None,
         )
     if verdict == "approval_required":
-        response_headers: dict[str, str] = {}
-        if result.get("approval_id"):
-            response_headers["x-ai-approval-id"] = str(result["approval_id"])
-        if result.get("decision_id"):
-            response_headers["x-ai-decision-id"] = str(result["decision_id"])
+        response_headers = apply_evidence_headers(
+            {},
+            evidence_from_governance(result, enforcement_outcome="approval_required"),
+        )
         raise HTTPException(
             status_code=409,
             detail=governance_detail(
