@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
@@ -38,6 +39,12 @@ from app.gateway.metrics import (
     CHAT_REQUESTS,
     CHAT_SHADOW,
     CHAT_SHADOW_DURATION,
+)
+from app.gateway.resilience import (
+    CircuitBreaker,
+    DrainState,
+    GlobalAdmissionController,
+    RetryBudget,
 )
 from app.gateway.routers import chat as chat_router
 from app.gateway.routers import decisions as decisions_router
@@ -140,6 +147,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.runtime_config = RuntimeConfigState.from_settings(settings)
     app.state.admission = TenantAdmissionController(load_tenant_policy_bundle())
+    app.state.global_admission = GlobalAdmissionController()
+    app.state.circuit_breaker = CircuitBreaker()
+    app.state.retry_budget = RetryBudget()
+    app.state.drain = DrainState()
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
@@ -148,9 +159,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     health_task = asyncio.create_task(
         health_probe_loop(app.state.backend_health, settings.health_interval_seconds)
     )
+    loop = asyncio.get_running_loop()
+
+    def _begin_drain(*_args: object) -> None:
+        app.state.drain.begin()
+
+    with suppress(NotImplementedError):
+        # Windows / restricted sandboxes may not support add_signal_handler.
+        loop.add_signal_handler(signal.SIGTERM, _begin_drain)
+        loop.add_signal_handler(signal.SIGINT, _begin_drain)
     try:
         yield
     finally:
+        app.state.drain.begin()
         health_task.cancel()
         with suppress(asyncio.CancelledError):
             await health_task
@@ -163,7 +184,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="1.6.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="1.7.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
 install_authentication(app)

@@ -149,6 +149,9 @@ async def post_completion_with_fallback(
     primary_target: ModelTarget,
     fallback_model: str | None = None,
     fallback_target: ModelTarget | None = None,
+    *,
+    circuit_breaker: object | None = None,
+    retry_budget: object | None = None,
 ) -> tuple[httpx.Response, str, bool, list[str]]:
     """Call primary then retry one retryable failure against the fallback target."""
     attempts = [(primary_model, primary_target, False)]
@@ -157,17 +160,36 @@ async def post_completion_with_fallback(
 
     failed_models: list[str] = []
     for index, (model, target, fallback_used) in enumerate(attempts):
+        allow = getattr(circuit_breaker, "allow", None) if circuit_breaker else None
+        if allow is not None and not allow(model):
+            failed_models.append(model)
+            if index == len(attempts) - 1:
+                raise httpx.RequestError(f"circuit open for backend {model}")
+            continue
+        if fallback_used and retry_budget is not None:
+            consume = getattr(retry_budget, "consume", None)
+            if consume is not None and not await consume():
+                raise httpx.RequestError("retry budget exhausted")
         try:
             response = await client.post(
                 chat_completions_url(target.url), json={**payload, "model": model}, headers=headers
             )
             response.raise_for_status()
+            record_success = getattr(circuit_breaker, "record_success", None)
+            if record_success is not None:
+                record_success(model)
             return response, model, fallback_used, failed_models
         except httpx.HTTPStatusError as error:
+            record_failure = getattr(circuit_breaker, "record_failure", None)
+            if record_failure is not None:
+                record_failure(model)
             if error.response.status_code < 500 or index == len(attempts) - 1:
                 raise
             failed_models.append(model)
         except httpx.RequestError:
+            record_failure = getattr(circuit_breaker, "record_failure", None)
+            if record_failure is not None:
+                record_failure(model)
             if index == len(attempts) - 1:
                 raise
             failed_models.append(model)

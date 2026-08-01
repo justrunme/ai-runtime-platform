@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.0
+
+Resilience and process-wide admission control.
+
+- Global inflight/queue limits with load-shed `503 gateway_load_shed`
+- Per-backend circuit breaker + retry budget for fallbacks
+- Graceful drain on SIGTERM/SIGINT: `/readyz` → draining, new chat rejected
+- Complements tenant admission from 1.6
+
 ## 1.6.0
 
 Tenant isolation on the execution plane.
