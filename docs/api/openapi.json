@@ -91,7 +91,7 @@
   },
   "info": {
     "title": "AI Runtime Gateway",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -163,6 +163,94 @@
           }
         },
         "summary": "Mcp Servers",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{server_name}/cancel": {
+      "post": {
+        "operationId": "mcp_server_cancel_mcp_servers__server_name__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mcp Server Cancel Mcp Servers  Server Name  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mcp Server Cancel",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{server_name}/initialize": {
+      "post": {
+        "operationId": "mcp_server_initialize_mcp_servers__server_name__initialize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_name",
+            "required": true,
+            "schema": {
+              "title": "Server Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mcp Server Initialize Mcp Servers  Server Name  Initialize Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mcp Server Initialize",
         "tags": [
           "mcp"
         ]

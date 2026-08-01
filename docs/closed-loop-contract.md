@@ -21,8 +21,10 @@ GitOps remediations over HTTP. It proves what it enforced and loaded.
 | Runtime status | `GET /v1/runtime/status` | Config digest / generation |
 | Runtime verify | `POST /v1/runtime/verify` | Expected-vs-actual + optional signed `verification_token` |
 | Runtime JWKS | `GET /v1/runtime/jwks` | Public keys for verify token validation |
-| MCP tools | `POST /mcp/tools/{tool}/call` | Govern + optional execute |
-| MCP servers | `GET /mcp/servers` | Registry metadata |
+| MCP tools | `POST /mcp/tools/{tool}/call` | Govern + optional execute (JSON/SSE) |
+| MCP servers | `GET /mcp/servers` | Registry metadata + active session |
+| MCP session | `POST /mcp/servers/{server}/initialize` | Session + capability digest |
+| MCP cancel | `POST /mcp/servers/{server}/cancel` | Cancel in-flight MCP request |
 | Health | `/livez`, `/readyz`, `/metrics` | Probe contract |
 
 ## Evidence headers (success and governance responses)

@@ -12,7 +12,13 @@ from fastapi.responses import JSONResponse
 from app.gateway.governance import GovernanceConfig
 from app.gateway.intent import resolve_intent
 from app.gateway.mcp import enforce_tool_governance, governed_tool_response
-from app.gateway.mcp_transport import execute_mcp_tool, load_mcp_registry
+from app.gateway.mcp_transport import (
+    cancel_mcp_request,
+    execute_mcp_tool,
+    initialize_mcp_session,
+    load_mcp_registry,
+    session_store,
+)
 from app.gateway.rbac import MCP_SERVERS_ROLES, require_any_role
 
 router = APIRouter(tags=["mcp"])
@@ -50,10 +56,56 @@ async def mcp_servers(request: Request) -> dict[str, Any]:
                 "credential_ref": cfg.credential_ref,
                 "timeout_seconds": cfg.timeout_seconds,
                 "max_result_bytes": cfg.max_result_bytes,
+                "session_mode": cfg.session_mode,
+                "capability_digest": cfg.capability_digest,
+                "active_session_id": (
+                    session.session_id
+                    if (session := session_store().get(name)) is not None
+                    else None
+                ),
             }
             for name, cfg in registry.servers.items()
         }
     }
+
+
+@router.post("/mcp/servers/{server_name}/initialize")
+async def mcp_server_initialize(server_name: str, request: Request) -> dict[str, Any]:
+    require_any_role(request, MCP_SERVERS_ROLES)
+    session = await initialize_mcp_session(
+        request.app.state.client,
+        server_name=server_name,
+        force=True,
+    )
+    return {
+        "server": server_name,
+        "session_id": session.session_id,
+        "protocol_version": session.protocol_version,
+        "capability_digest": session.capability_digest,
+        "capabilities": session.capabilities,
+    }
+
+
+@router.post("/mcp/servers/{server_name}/cancel")
+async def mcp_server_cancel(server_name: str, request: Request) -> dict[str, Any]:
+    require_any_role(request, MCP_SERVERS_ROLES)
+    payload = await request.json()
+    if not isinstance(payload, dict) or not payload.get("request_id"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "type": "invalid_request_error",
+                    "code": "mcp_request_id_required",
+                    "message": "body.request_id is required",
+                }
+            },
+        )
+    return await cancel_mcp_request(
+        request.app.state.client,
+        server_name=server_name,
+        request_id=str(payload["request_id"]),
+    )
 
 
 @router.post("/v1/intent/resolve")
@@ -116,7 +168,7 @@ async def mcp_tool_call(tool_name: str, request: Request) -> JSONResponse:
             tool_name=tool_name,
             arguments=arguments,
         )
-        # Optional audit sink — Control Plane may ignore unknown paths.
+        # Audit sink — Control Plane may ignore unknown paths.
         if governance is not None:
             with suppress(Exception):
                 await request.app.state.client.post(
@@ -127,6 +179,13 @@ async def mcp_tool_call(tool_name: str, request: Request) -> JSONResponse:
                         "verdict": (governance_result or {}).get("final_verdict", "allow"),
                         "truncated": execution.get("truncated", False),
                         "decision_id": (governance_result or {}).get("decision_id"),
+                        "policy_digest": (governance_result or {}).get("policy_digest"),
+                        "request_digest": (governance_result or {}).get("request_digest"),
+                        "mcp_request_id": execution.get("mcp_request_id"),
+                        "session_id": execution.get("session_id"),
+                        "capability_digest": execution.get("capability_digest"),
+                        "credential_ref": execution.get("credential_ref"),
+                        "transport": execution.get("transport"),
                     },
                     timeout=min(2.0, governance.timeout_seconds),
                 )

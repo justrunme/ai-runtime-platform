@@ -1,5 +1,12 @@
 # Upgrade guide
 
+## To v2.3.0
+
+1. For sessionful MCP servers set `transport: streamable-http` (or `sessionMode: always`).
+2. Optionally pin `capabilityDigest` in `MCP_SERVER_REGISTRY` after first initialize.
+3. Credentials remain `env:NAME` only (no inline secrets).
+4. Cancel in-flight calls with `POST /mcp/servers/{name}/cancel` + `request_id`.
+
 ## To v2.2.0
 
 1. Optional: configure `RUNTIME_VERIFY_PRIVATE_KEY_B64` (or PEM/file) so Control Plane can trust verify responses.

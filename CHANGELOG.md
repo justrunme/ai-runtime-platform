@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.0
+
+MCP supported path for Streamable HTTP sessions.
+
+- `initialize` + `Mcp-Session-Id` lifecycle (`sessionMode` auto/always/never)
+- SSE (`text/event-stream`) JSON-RPC parsing for tools/call responses
+- Cancellation via `notifications/cancelled` (+ DELETE fallback)
+- Optional capability digest binding on initialize
+- Richer audit-tool payload (session, capability digest, mcp_request_id)
+- Routes: `POST /mcp/servers/{name}/initialize`, `POST /mcp/servers/{name}/cancel`
+
 ## 2.2.0
 
 Full closed-loop integration surface.
