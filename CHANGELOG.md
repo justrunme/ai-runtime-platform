@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0
+
+Runtime status, config digest, and verification API.
+
+- `GET /v1/runtime/status` — instance id, config digest/generation, routes, backends, last-seen policy
+- `POST /v1/runtime/verify` — compare expected config/policy/models digests (GitOps remediation close-loop)
+- Immutable `RuntimeConfigSnapshot` at process start with last-known-good markers
+- `GATEWAY_CONFIG_GENERATION` / `GATEWAY_INSTANCE_ID` for GitOps correlation
+
 ## 1.4.0
 
 Enforcement evidence and Control Plane decision correlation.

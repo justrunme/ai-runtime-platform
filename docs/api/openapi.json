@@ -14,6 +14,17 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "RuntimeVerifyRequest": {
+        "properties": {
+          "expected": {
+            "additionalProperties": true,
+            "title": "Expected",
+            "type": "object"
+          }
+        },
+        "title": "RuntimeVerifyRequest",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -58,7 +69,7 @@
   },
   "info": {
     "title": "AI Runtime Gateway",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -355,6 +366,72 @@
         "summary": "List Routes",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/v1/runtime/status": {
+      "get": {
+        "operationId": "runtime_status_v1_runtime_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Runtime Status V1 Runtime Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Status",
+        "tags": [
+          "runtime"
+        ]
+      }
+    },
+    "/v1/runtime/verify": {
+      "post": {
+        "operationId": "runtime_verify_v1_runtime_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Runtime Verify V1 Runtime Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Runtime Verify",
+        "tags": [
+          "runtime"
         ]
       }
     }
