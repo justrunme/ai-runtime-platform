@@ -1,5 +1,12 @@
 # Upgrade guide
 
+## To v1.4.0
+
+1. No OpenAI response body changes. Clients may read new evidence headers.
+2. Decision store records gain optional enforcement fields (Redis hashes stay string-valued).
+3. To require cryptographic binding when Control Plane emits `decision_token`, set `GATEWAY_REQUIRE_SIGNED_DECISION=true` and point `CONTROL_PLANE_DECISION_JWKS_URL` (or reuse `OIDC_JWKS_URL`).
+4. See [enforcement evidence](enforcement-evidence.md).
+
 ## To v1.3.1
 
 1. No API or config breaking changes from 1.3.0.

@@ -4,7 +4,8 @@
 | --- | --- | --- |
 | 1.0.x | 1.0.x | Supported |
 | 1.1.x | 1.0.x | Backward compatible |
-| 1.x | 1.1.x / 1.2.x | Supported (evaluate + `x-ai-approval-id`) |
+| 1.x | 1.1.x / 1.2.x / 1.3.x | Supported (evaluate + `x-ai-approval-id`) |
+| 1.3.x / 1.4.x | 1.4.x | Supported + enforcement evidence headers; signed `decision_token` optional until CP emits it |
 | 2.x | 1.x | Requires migration guide |
 
 Frozen contracts:

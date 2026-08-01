@@ -12,6 +12,13 @@ if TYPE_CHECKING:
     from redis.asyncio import Redis
 
 
+def _optional_str(data: dict[str, Any], key: str) -> str | None:
+    value = data.get(key)
+    if value in (None, "", "None"):
+        return None
+    return str(value)
+
+
 @dataclass(frozen=True)
 class DecisionRecord:
     request_id: str
@@ -27,6 +34,15 @@ class DecisionRecord:
     estimated_cost: float | None = None
     stream_outcome: str | None = None
     stream_ttft_ms: float | None = None
+    # Enforcement evidence (Control Plane correlation). Absent on pre-1.4 records.
+    control_plane_decision_id: str | None = None
+    approval_id: str | None = None
+    policy_bundle_id: str | None = None
+    policy_digest: str | None = None
+    request_digest: str | None = None
+    control_plane_version: str | None = None
+    runtime_version: str | None = None
+    enforcement_outcome: str | None = None
     recorded_at: float = 0.0
 
     def to_dict(self) -> dict[str, object]:
@@ -66,6 +82,14 @@ class DecisionRecord:
                 if data.get("stream_ttft_ms") in (None, "", "None")
                 else float(data["stream_ttft_ms"])
             ),
+            control_plane_decision_id=_optional_str(data, "control_plane_decision_id"),
+            approval_id=_optional_str(data, "approval_id"),
+            policy_bundle_id=_optional_str(data, "policy_bundle_id"),
+            policy_digest=_optional_str(data, "policy_digest"),
+            request_digest=_optional_str(data, "request_digest"),
+            control_plane_version=_optional_str(data, "control_plane_version"),
+            runtime_version=_optional_str(data, "runtime_version"),
+            enforcement_outcome=_optional_str(data, "enforcement_outcome"),
             recorded_at=float(data.get("recorded_at") or 0),
         )
 

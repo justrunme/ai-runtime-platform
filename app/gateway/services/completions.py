@@ -105,6 +105,14 @@ async def record_decision(
     estimated_cost: float | None = None,
     stream_outcome: str | None = None,
     stream_ttft_ms: float | None = None,
+    control_plane_decision_id: str | None = None,
+    approval_id: str | None = None,
+    policy_bundle_id: str | None = None,
+    policy_digest: str | None = None,
+    request_digest: str | None = None,
+    control_plane_version: str | None = None,
+    runtime_version: str | None = None,
+    enforcement_outcome: str | None = None,
 ) -> None:
     await store.put(
         DecisionRecord(
@@ -119,6 +127,14 @@ async def record_decision(
             estimated_cost=estimated_cost,
             stream_outcome=stream_outcome,
             stream_ttft_ms=stream_ttft_ms,
+            control_plane_decision_id=control_plane_decision_id,
+            approval_id=approval_id,
+            policy_bundle_id=policy_bundle_id,
+            policy_digest=policy_digest,
+            request_digest=request_digest,
+            control_plane_version=control_plane_version,
+            runtime_version=runtime_version,
+            enforcement_outcome=enforcement_outcome,
         )
     )
 

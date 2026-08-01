@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0
+
+Enforcement evidence and Control Plane decision correlation.
+
+- Decision records store `control_plane_decision_id`, policy/request digests, versions, and `enforcement_outcome`
+- Response headers (OpenAI body unchanged): `x-ai-control-decision-id`, `x-ai-policy-bundle-id`, `x-ai-policy-digest`, `x-ai-request-digest`, `x-ai-runtime-version`
+- Optional signed decision token (`decision_token`) verification via JWKS; `GATEWAY_REQUIRE_SIGNED_DECISION` for hard binding
+- Compatible with Control Plane evaluate responses that omit digests (token or durable decision can fill them)
+
 ## 1.3.1
 
 Release integrity fix.

@@ -281,6 +281,10 @@ async def test_enforce_governance_requires_approval() -> None:
     assert detail["retry"]["header"] == "x-ai-approval-id"
     assert error.value.headers["x-ai-approval-id"] == "apr_123"
     assert error.value.headers["x-ai-decision-id"] == "dec_456"
+    assert error.value.headers["x-ai-control-decision-id"] == "dec_456"
+    assert error.value.headers["x-ai-policy-digest"] == "pol_789"
+    assert error.value.headers["x-ai-request-digest"] == "req_digest"
+    assert "x-ai-runtime-version" in error.value.headers
 
 
 @pytest.mark.anyio
