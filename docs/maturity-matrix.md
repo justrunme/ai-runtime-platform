@@ -17,7 +17,7 @@
 | OpenAI error envelope | Supported | Top-level `{error}` contract tests |
 | `/livez` `/readyz` | Supported | Production probes; draining status |
 | Observed streaming lifecycle | Supported | TTFT + terminal outcomes |
-| Usage events | Reference | OTEL + webhook buffer; streaming usage / retry worker pending |
+| Usage events | Supported | OTEL + retrying webhook worker; streaming usage when upstream emits it |
 | MCP Streamable HTTP (JSON) | Reference | Stateless `tools/call`; requires CP unless `MCP_ALLOW_UNGOVERNED` |
 | MCP session / SSE lifecycle | Experimental | Not implemented |
 | Tenant upstream credentials | Experimental | `upstreamCredentialRef` reserved |

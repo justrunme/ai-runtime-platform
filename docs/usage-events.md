@@ -26,7 +26,14 @@ does not store a billing ledger.
 ## Delivery
 
 1. Always attach fields to the active OTEL span (`ai.runtime.usage.*`).
-2. Optionally POST to `USAGE_EVENTS_WEBHOOK_URL` with:
-   - `Idempotency-Key: <event_id>`
-   - bounded local buffer (`USAGE_EVENTS_BUFFER_MAX`, default 1000)
-   - drop metrics on overflow
+2. Optionally enqueue for webhook delivery (`USAGE_EVENTS_WEBHOOK_URL`):
+   - `Idempotency-Key` / `X-Event-Id` = deterministic `event_id`
+   - background worker with exponential backoff (`USAGE_EVENTS_MAX_ATTEMPTS`)
+   - bounded buffer (`USAGE_EVENTS_BUFFER_MAX`)
+   - metrics: buffer depth, delivery lag, drops (`buffer_overflow` / `max_attempts` / `shutdown_timeout`)
+   - on gateway shutdown: stop accept → drain until timeout
+
+## Streaming
+
+When the upstream SSE includes a final `usage` object (OpenAI `stream_options.include_usage`),
+Runtime records tokens/cost/TTFT/outcome on the stream usage event.

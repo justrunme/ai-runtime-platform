@@ -154,6 +154,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.drain = DrainState()
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
     app.state.usage_events = UsageEventEmitter(app.state.client)
+    app.state.usage_events.start()
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
     app.state.governance = GovernanceConfig.from_environment()
@@ -177,6 +178,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         health_task.cancel()
         with suppress(asyncio.CancelledError):
             await health_task
+        usage_events = getattr(app.state, "usage_events", None)
+        if usage_events is not None:
+            await usage_events.aclose(drain_timeout_seconds=5.0)
         await app.state.backend_health.aclose()
         tenant_store = getattr(app.state, "tenant_attribution", None)
         if tenant_store is not None:
@@ -186,7 +190,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="2.0.1", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="2.1.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
 install_authentication(app)

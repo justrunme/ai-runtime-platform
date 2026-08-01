@@ -1,5 +1,11 @@
 # Upgrade guide
 
+## To v2.1.0
+
+1. Optional webhook delivery now retries; tune `USAGE_EVENTS_MAX_ATTEMPTS` / buffer size.
+2. Streaming clients that need chargeback should send `stream_options.include_usage=true`.
+3. See [usage events](usage-events.md).
+
 ## To v2.0.1
 
 1. No OpenAI body break from 2.0.0.

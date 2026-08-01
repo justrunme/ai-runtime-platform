@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0
+
+Reliable usage evidence delivery.
+
+- Background webhook retry worker with exponential backoff and buffer metrics
+- Deterministic idempotent `event_id` from request/outcome/backend
+- Shutdown drain for pending usage events
+- Streaming usage extraction from SSE (`stream_options.include_usage`) + usage events in stream finalizer
+
 ## 2.0.1
 
 Correctness and contract honesty.
