@@ -1,0 +1,82 @@
+# HA closed-loop overlay: Postgres-backed dual Control Plane + dual Runtime + Redis + OIDC.
+# Use with base + oidc + real-cp:
+#
+#   docker compose \
+#     -f deploy/e2e/docker-compose.yaml \
+#     -f deploy/e2e/docker-compose.oidc.yaml \
+#     -f deploy/e2e/docker-compose.real-cp.yaml \
+#     -f deploy/e2e/docker-compose.ha.yaml \
+#     up --build -d
+#
+# Requires RUNTIME_VERIFY_PRIVATE_KEY_B64 in the environment (set by run_e2e_ha.sh).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cp
+      POSTGRES_PASSWORD: cp
+      POSTGRES_DB: control_plane
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cp -d control_plane"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  control-plane:
+    environment:
+      DATABASE_URL: postgresql://cp:cp@postgres:5432/control_plane
+      OTEL_SDK_DISABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  control-plane-b:
+    image: ${CONTROL_PLANE_IMAGE:-ghcr.io/justrunme/ai-infra-control-plane:2.0.0}
+    environment:
+      DATABASE_URL: postgresql://cp:cp@postgres:5432/control_plane
+      OTEL_SDK_DISABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      control-plane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "18085:8080"
+
+  gateway-a:
+    environment:
+      CONTROL_PLANE_URL: http://control-plane:8080
+      GATEWAY_CONFIG_GENERATION: "7"
+      GATEWAY_INSTANCE_ID: gateway-a
+      RUNTIME_VERIFY_PRIVATE_KEY_B64: ${RUNTIME_VERIFY_PRIVATE_KEY_B64}
+      RUNTIME_VERIFY_KID: e2e-runtime-verify
+      RUNTIME_VERIFY_ISSUER: ai-runtime
+      RUNTIME_VERIFY_AUDIENCE: ai-control-plane
+      GATEWAY_REQUIRE_SIGNED_VERIFY: "true"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      control-plane-b:
+        condition: service_healthy
+
+  gateway-b:
+    environment:
+      CONTROL_PLANE_URL: http://control-plane-b:8080
+      GATEWAY_CONFIG_GENERATION: "7"
+      GATEWAY_INSTANCE_ID: gateway-b
+      RUNTIME_VERIFY_PRIVATE_KEY_B64: ${RUNTIME_VERIFY_PRIVATE_KEY_B64}
+      RUNTIME_VERIFY_KID: e2e-runtime-verify
+      RUNTIME_VERIFY_ISSUER: ai-runtime
+      RUNTIME_VERIFY_AUDIENCE: ai-control-plane
+      GATEWAY_REQUIRE_SIGNED_VERIFY: "true"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      control-plane-b:
+        condition: service_healthy

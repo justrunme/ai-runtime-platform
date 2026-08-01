@@ -19,7 +19,7 @@ from app.gateway.jwt_verify import (
     verify_bearer_token_async,
 )
 
-PUBLIC_PATHS = frozenset({"/healthz", "/livez", "/readyz", "/metrics"})
+PUBLIC_PATHS = frozenset({"/healthz", "/livez", "/readyz", "/metrics", "/v1/runtime/jwks"})
 
 
 def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
