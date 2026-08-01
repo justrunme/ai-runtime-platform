@@ -25,6 +25,8 @@ class DecisionRecord:
     shadow_duration_ms: float | None = None
     shadow_outcome: str | None = None
     estimated_cost: float | None = None
+    stream_outcome: str | None = None
+    stream_ttft_ms: float | None = None
     recorded_at: float = 0.0
 
     def to_dict(self) -> dict[str, object]:
@@ -57,6 +59,12 @@ class DecisionRecord:
                 None
                 if data.get("estimated_cost") in (None, "", "None")
                 else float(data["estimated_cost"])
+            ),
+            stream_outcome=data.get("stream_outcome") or None,
+            stream_ttft_ms=(
+                None
+                if data.get("stream_ttft_ms") in (None, "", "None")
+                else float(data["stream_ttft_ms"])
             ),
             recorded_at=float(data.get("recorded_at") or 0),
         )
