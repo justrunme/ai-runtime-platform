@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import json
 
+import pytest
+from fastapi import HTTPException
 from starlette.requests import Request
 
 from app.gateway.governance import GovernanceConfig, build_evaluate_payload
@@ -45,7 +47,105 @@ def test_resolve_identity_from_jwt() -> None:
     assert identity.source == "jwt"
 
 
-def test_build_evaluate_payload_includes_subject() -> None:
+def test_trusted_proxy_allows_header_identity(monkeypatch) -> None:
+    monkeypatch.setenv("IDENTITY_TRUSTED_PROXY", "true")
+    monkeypatch.delenv("OIDC_JWT_VERIFY", raising=False)
+    identity = resolve_workload_identity(
+        _request({"x-ai-subject": "user-99", "x-ai-team": "search"}),
+        {
+            "team": "platform",
+            "owner": "gateway",
+            "environment": "development",
+            "namespace": "ai-dev",
+        },
+    )
+    assert identity.subject == "user-99"
+    assert identity.team == "search"
+    assert identity.source == "headers"
+
+
+def test_without_trusted_proxy_ignores_spoofed_headers(monkeypatch) -> None:
+    monkeypatch.delenv("IDENTITY_TRUSTED_PROXY", raising=False)
+    monkeypatch.delenv("OIDC_JWT_VERIFY", raising=False)
+    identity = resolve_workload_identity(
+        _request({"x-ai-subject": "attacker", "x-ai-team": "finance"}),
+        {
+            "team": "platform",
+            "owner": "gateway",
+            "environment": "development",
+            "namespace": "ai-dev",
+        },
+    )
+    assert identity.subject == "gateway"
+    assert identity.team == "platform"
+    assert identity.source == "default"
+
+
+def test_jwt_verify_fail_closed_on_invalid_token(monkeypatch) -> None:
+    monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
+    monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example/.well-known/jwks.json")
+    with pytest.raises(HTTPException) as error:
+        resolve_workload_identity(
+            _request(
+                {
+                    "authorization": "Bearer not.a.valid.jwt",
+                    "x-ai-team": "finance",
+                    "x-ai-owner": "attacker",
+                }
+            ),
+            {
+                "team": "platform",
+                "owner": "gateway",
+                "environment": "development",
+                "namespace": "ai-dev",
+            },
+        )
+    assert error.value.status_code == 401
+    assert error.value.detail["error"]["code"] == "invalid_bearer_token"
+
+
+def test_jwt_verify_requires_bearer_token(monkeypatch) -> None:
+    monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
+    monkeypatch.setenv("OIDC_JWKS_URL", "https://issuer.example/.well-known/jwks.json")
+    with pytest.raises(HTTPException) as error:
+        resolve_workload_identity(
+            _request({"x-ai-team": "finance"}),
+            {
+                "team": "platform",
+                "owner": "gateway",
+                "environment": "development",
+                "namespace": "ai-dev",
+            },
+        )
+    assert error.value.status_code == 401
+    assert error.value.detail["error"]["code"] == "missing_bearer_token"
+
+
+def test_jwt_verify_ignores_client_identity_headers(monkeypatch) -> None:
+    monkeypatch.setenv("OIDC_JWT_VERIFY", "true")
+    monkeypatch.delenv("OIDC_JWKS_URL", raising=False)
+    # Misconfigured JWKS should fail closed with 503, not accept headers.
+    with pytest.raises(HTTPException) as error:
+        resolve_workload_identity(
+            _request(
+                {
+                    "authorization": f"Bearer {_make_jwt({'sub': 'svc-1', 'team': 'platform'})}",
+                    "x-ai-team": "finance",
+                }
+            ),
+            {
+                "team": "platform",
+                "owner": "gateway",
+                "environment": "development",
+                "namespace": "ai-dev",
+            },
+        )
+    assert error.value.status_code == 503
+    assert error.value.detail["error"]["code"] == "jwt_misconfigured"
+
+
+def test_build_evaluate_payload_uses_trusted_proxy_subject(monkeypatch) -> None:
+    monkeypatch.setenv("IDENTITY_TRUSTED_PROXY", "true")
     config = GovernanceConfig(
         control_plane_url="http://control-api:8080",
         enabled=True,

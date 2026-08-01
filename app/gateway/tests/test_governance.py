@@ -72,11 +72,18 @@ def test_build_evaluate_payload_maps_headers_and_cost() -> None:
         {"model": "qwen", "messages": [{"content": "hello world"}], "max_tokens": 100},
         _governance_config(),
         {"qwen": target},
+        requests_last_minute=7,
+        tokens_today=1200,
     )
     assert payload["team"] == "ml-platform"
     assert payload["model"] == "qwen"
-    assert payload["sensitive_data"] is True
-    assert payload["forecast_monthly_cost_usd"] == 900.0
+    # Client cost/sensitive headers are untrusted and must not drive policy fields.
+    assert payload["sensitive_data"] is False
+    assert payload["forecast_monthly_cost_usd"] == 400.0
+    assert payload["untrusted_context"]["sensitive_data"] is True
+    assert payload["untrusted_context"]["forecast_monthly_cost_usd"] == "900"
+    assert payload["requests_last_minute"] == 7
+    assert payload["tokens_today"] == 1200
     assert payload["input_tokens"] >= 1
     assert payload["cost_per_request_usd"] > 0
 
@@ -98,6 +105,27 @@ def test_build_evaluate_payload_includes_model_supply_chain_headers() -> None:
     )
     assert payload["model_artifact_digest"] == "sha256:abc123"
     assert payload["model_revision"] == "v1"
+
+
+def test_build_evaluate_payload_prefers_server_model_registry() -> None:
+    request = httpx.Request("POST", "http://gw/v1/chat/completions")
+    target = ModelTarget(
+        url="http://model",
+        input_cost_per_million=1.0,
+        output_cost_per_million=2.0,
+        provider="vllm",
+        model_revision="rev-9",
+        model_artifact_digest="sha256:server",
+    )
+    payload = build_evaluate_payload(
+        request,
+        {"model": "qwen", "messages": [{"content": "hi"}]},
+        _governance_config(),
+        {"qwen": target},
+    )
+    assert payload["provider"] == "vllm"
+    assert payload["model_revision"] == "rev-9"
+    assert payload["model_artifact_digest"] == "sha256:server"
 
 
 @pytest.mark.anyio
@@ -227,6 +255,10 @@ async def test_enforce_governance_requires_approval() -> None:
                 "final_verdict": "approval_required",
                 "reasons": ["critical risk score requires human approval"],
                 "stages": {"risk": {"level": "critical"}},
+                "approval_id": "apr_123",
+                "decision_id": "dec_456",
+                "policy_digest": "pol_789",
+                "request_digest": "req_digest",
             },
             request=request,
         )
@@ -241,6 +273,44 @@ async def test_enforce_governance_requires_approval() -> None:
                 {},
             )
     assert error.value.status_code == 409
+    detail = error.value.detail
+    assert detail["approval_id"] == "apr_123"
+    assert detail["decision_id"] == "dec_456"
+    assert detail["policy_digest"] == "pol_789"
+    assert detail["request_digest"] == "req_digest"
+    assert detail["retry"]["header"] == "x-ai-approval-id"
+    assert error.value.headers["x-ai-approval-id"] == "apr_123"
+    assert error.value.headers["x-ai-decision-id"] == "dec_456"
+
+
+@pytest.mark.anyio
+async def test_enforce_governance_forwards_approval_id() -> None:
+    seen_approval: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/governance/evaluate":
+            seen_approval.append(request.headers.get("x-ai-approval-id", ""))
+            return httpx.Response(
+                200,
+                json={"final_verdict": "allow", "reasons": ["approved"], "stages": {}},
+                request=request,
+            )
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await enforce_governance(
+            client,
+            _governance_config(),
+            httpx.Request(
+                "POST",
+                "http://gw/v1/chat/completions",
+                headers={"x-ai-approval-id": "apr_123"},
+            ),
+            {"model": "qwen", "messages": []},
+            {},
+        )
+
+    assert seen_approval == ["apr_123"]
 
 
 @pytest.mark.anyio

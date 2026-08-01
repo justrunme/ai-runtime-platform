@@ -10,7 +10,11 @@ import httpx
 from fastapi import HTTPException, Request
 from prometheus_client import Counter
 
-from app.gateway.identity import resolve_workload_identity
+from app.gateway.identity import (
+    claim_flag,
+    is_trusted_proxy_enabled,
+    resolve_workload_identity,
+)
 
 GOVERNANCE_DECISIONS = Counter(
     "gateway_governance_decisions_total",
@@ -118,6 +122,10 @@ def _extract_prompt_text(payload: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _client_hint(request: Request, name: str) -> str:
+    return request.headers.get(name, "").strip()
+
+
 def build_evaluate_payload(
     request: Request,
     payload: dict[str, Any],
@@ -146,6 +154,39 @@ def build_evaluate_payload(
         },
     )
 
+    provider = getattr(target, "provider", None) if target else None
+    if not provider:
+        provider = config.default_provider
+
+    model_revision = getattr(target, "model_revision", None) if target else None
+    model_digest = getattr(target, "model_artifact_digest", None) if target else None
+    if is_trusted_proxy_enabled():
+        model_revision = model_revision or _client_hint(request, "x-ai-model-revision")
+        model_digest = model_digest or _client_hint(request, "x-ai-model-digest")
+
+    sensitive_data = claim_flag(identity, "sensitive_data", "ai_sensitive_data")
+    tool_access = claim_flag(identity, "tool_access", "ai_tool_access")
+    write_permission = claim_flag(identity, "write_permission", "ai_write_permission")
+
+    untrusted_context = {
+        "team": _client_hint(request, "x-ai-team") or _client_hint(request, "x-ai-tenant"),
+        "owner": _client_hint(request, "x-ai-owner"),
+        "subject": _client_hint(request, "x-ai-subject"),
+        "sensitive_data": _header_bool(request, "x-ai-sensitive-data"),
+        "tool_access": _header_bool(request, "x-ai-tool-access"),
+        "write_permission": _header_bool(request, "x-ai-write-permission"),
+        "cost_per_hour_usd": _client_hint(request, "x-ai-cost-per-hour-usd"),
+        "month_to_date_cost_usd": _client_hint(request, "x-ai-month-to-date-cost-usd"),
+        "forecast_monthly_cost_usd": _client_hint(request, "x-ai-forecast-monthly-cost-usd"),
+        "requests_last_minute": _client_hint(request, "x-ai-requests-last-minute"),
+        "tokens_today": _client_hint(request, "x-ai-tokens-today"),
+        "provider": _client_hint(request, "x-ai-provider"),
+        "model_revision": _client_hint(request, "x-ai-model-revision"),
+        "model_artifact_digest": _client_hint(request, "x-ai-model-digest"),
+        "identity_source": identity.source,
+        "trusted_proxy": is_trusted_proxy_enabled(),
+    }
+
     return {
         "subject": identity.subject,
         "groups": list(identity.groups),
@@ -154,38 +195,73 @@ def build_evaluate_payload(
         "owner": identity.owner,
         "environment": identity.environment,
         "namespace": identity.namespace,
-        "action": request.headers.get("x-ai-action", config.default_action),
+        "action": config.default_action,
         "model": model,
-        "provider": request.headers.get("x-ai-provider", config.default_provider),
+        "provider": str(provider),
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "cost_per_request_usd": cost_per_request_usd,
-        "cost_per_hour_usd": float(
-            request.headers.get("x-ai-cost-per-hour-usd", config.default_cost_per_hour_usd)
-        ),
-        "month_to_date_cost_usd": float(
-            request.headers.get(
-                "x-ai-month-to-date-cost-usd", config.default_month_to_date_cost_usd
-            )
-        ),
-        "forecast_monthly_cost_usd": float(
-            request.headers.get(
-                "x-ai-forecast-monthly-cost-usd", config.default_forecast_monthly_cost_usd
-            )
-        ),
-        "sensitive_data": _header_bool(request, "x-ai-sensitive-data"),
-        "tool_access": _header_bool(request, "x-ai-tool-access"),
-        "write_permission": _header_bool(request, "x-ai-write-permission"),
-        "requests_last_minute": int(
-            request.headers.get("x-ai-requests-last-minute", requests_last_minute or 0)
-        ),
-        "tokens_today": int(request.headers.get("x-ai-tokens-today", tokens_today or 0)),
-        "model_revision": request.headers.get("x-ai-model-revision", "").strip(),
-        "model_artifact_digest": request.headers.get("x-ai-model-digest", "").strip(),
+        # Server-derived cost/quota signals — never accept client overrides for policy.
+        "cost_per_hour_usd": float(config.default_cost_per_hour_usd),
+        "month_to_date_cost_usd": float(config.default_month_to_date_cost_usd),
+        "forecast_monthly_cost_usd": float(config.default_forecast_monthly_cost_usd),
+        "sensitive_data": sensitive_data,
+        "tool_access": tool_access,
+        "write_permission": write_permission,
+        "requests_last_minute": int(requests_last_minute or 0),
+        "tokens_today": int(tokens_today or 0),
+        "model_revision": str(model_revision or ""),
+        "model_artifact_digest": str(model_digest or ""),
         "prompt_text": _extract_prompt_text(payload),
-        "agent": request.headers.get("x-ai-agent", "").strip(),
-        "region": request.headers.get("x-ai-region", "").strip(),
+        "agent": str(identity.claims.get("agent") or "")
+        if identity.claims
+        else (_client_hint(request, "x-ai-agent") if is_trusted_proxy_enabled() else ""),
+        "region": str(identity.claims.get("region") or "")
+        if identity.claims
+        else (_client_hint(request, "x-ai-region") if is_trusted_proxy_enabled() else ""),
+        "untrusted_context": untrusted_context,
     }
+
+
+def governance_detail(
+    *,
+    code: str,
+    message: str,
+    result: dict[str, Any],
+    control_plane_url: str | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    detail: dict[str, Any] = {
+        "error": {
+            "type": "governance_error",
+            "code": code,
+            "message": message,
+        },
+        "final_verdict": result.get("final_verdict"),
+        "reasons": result.get("reasons", []),
+        "stages": result.get("stages", {}),
+        "decision_id": result.get("decision_id"),
+        "approval_id": result.get("approval_id"),
+        "policy_bundle_id": result.get("policy_bundle_id"),
+        "policy_digest": result.get("policy_digest"),
+        "request_digest": result.get("request_digest"),
+        "retry": None,
+    }
+    if detail["approval_id"]:
+        detail["retry"] = {
+            "instruction": (
+                "Approve the request at the control plane, then retry this gateway "
+                "request with header x-ai-approval-id set to approval_id."
+            ),
+            "approve_path": f"/approvals/{detail['approval_id']}/approve",
+            "header": "x-ai-approval-id",
+            "approval_id": detail["approval_id"],
+        }
+    if control_plane_url is not None:
+        detail["control_plane_url"] = control_plane_url
+    if reason is not None:
+        detail["reason"] = reason
+    return detail
 
 
 async def enforce_governance(
@@ -218,10 +294,13 @@ async def enforce_governance(
     authorization = request.headers.get("authorization", "").strip()
     if authorization:
         headers["authorization"] = authorization
-    model_digest = request.headers.get("x-ai-model-digest", "").strip()
+    approval_id = request.headers.get("x-ai-approval-id", "").strip()
+    if approval_id:
+        headers["x-ai-approval-id"] = approval_id
+    model_digest = str(body.get("model_artifact_digest") or "").strip()
     if model_digest:
         headers["x-ai-model-digest"] = model_digest
-    model_revision = request.headers.get("x-ai-model-revision", "").strip()
+    model_revision = str(body.get("model_revision") or "").strip()
     if model_revision:
         headers["x-ai-model-revision"] = model_revision
 
@@ -241,11 +320,13 @@ async def enforce_governance(
             return None
         raise HTTPException(
             status_code=503,
-            detail={
-                "error": "governance control plane unavailable",
-                "control_plane_url": config.control_plane_url,
-                "reason": str(error),
-            },
+            detail=governance_detail(
+                code="control_plane_unavailable",
+                message="governance control plane unavailable",
+                result={"final_verdict": "control_plane_error", "reasons": [], "stages": {}},
+                control_plane_url=config.control_plane_url,
+                reason=str(error),
+            ),
         ) from error
 
     verdict = str(result.get("final_verdict", "unknown"))
@@ -254,21 +335,25 @@ async def enforce_governance(
     if verdict == "block":
         raise HTTPException(
             status_code=403,
-            detail={
-                "error": "governance blocked the request",
-                "final_verdict": verdict,
-                "reasons": result.get("reasons", []),
-                "stages": result.get("stages", {}),
-            },
+            detail=governance_detail(
+                code="governance_blocked",
+                message="governance blocked the request",
+                result=result,
+            ),
         )
     if verdict == "approval_required":
+        response_headers: dict[str, str] = {}
+        if result.get("approval_id"):
+            response_headers["x-ai-approval-id"] = str(result["approval_id"])
+        if result.get("decision_id"):
+            response_headers["x-ai-decision-id"] = str(result["decision_id"])
         raise HTTPException(
             status_code=409,
-            detail={
-                "error": "governance approval required",
-                "final_verdict": verdict,
-                "reasons": result.get("reasons", []),
-                "stages": result.get("stages", {}),
-            },
+            detail=governance_detail(
+                code="governance_approval_required",
+                message="governance approval required",
+                result=result,
+            ),
+            headers=response_headers or None,
         )
     return result

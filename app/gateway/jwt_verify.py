@@ -12,6 +12,10 @@ import jwt
 from jwt import PyJWKClient
 
 
+class JwtConfigurationError(RuntimeError):
+    """Raised when JWT verification is enabled without a usable JWKS URL."""
+
+
 def is_jwt_verify_enabled() -> bool:
     return os.getenv("OIDC_JWT_VERIFY", "").strip().lower() in {"1", "true", "yes"}
 
@@ -44,7 +48,9 @@ def verify_bearer_token(token: str) -> dict[str, Any]:
 
     jwks_url = get_jwks_url()
     if not jwks_url:
-        return decode_unsigned_payload(token)
+        raise JwtConfigurationError(
+            "OIDC_JWT_VERIFY is enabled but OIDC_JWKS_URL is not configured"
+        )
 
     client = get_jwks_client(jwks_url)
     signing_key = client.get_signing_key_from_jwt(token)
