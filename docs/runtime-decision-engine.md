@@ -120,11 +120,13 @@ The runtime remains responsible for fast request execution. The control plane be
 | Health scoring | Implemented per gateway replica, Redis-backed when `REDIS_URL` is set | Export fleet-wide health to shared telemetry |
 | Health-aware routing | Implemented with minimum score threshold | Use control-plane policy updates |
 | Cost-aware routing | Implemented with configured unit costs | Connect budget policy from control plane |
-| Governance enforcement | Implemented through `CONTROL_PLANE_URL` | Expand policy context and approval integration |
-| MCP tool governance | Implemented through `/mcp/tools/{tool}/call` | Replace governed stubs with real upstream MCP servers |
-| Intent resolution | Implemented through `/v1/intent/resolve` proxy | Add richer plan execution and audit correlation |
-| OIDC/JWKS identity | Implemented for JWT verification and forwarding | Add production IdP examples beyond demo Keycloak |
-| Tenant attribution | Implemented with in-memory or Redis-backed counters | Add persistent billing/chargeback integration |
-| Dynamic policy engine | Not implemented | Watch signed policy config and apply without redeploying clients |
+| Governance enforcement | Implemented through `CONTROL_PLANE_URL` | Stable; expand context via Control Plane contracts |
+| MCP tool governance | Implemented: evaluate-tool then upstream MCP Streamable HTTP | Session/SSE/cancel + optional capability digest pin |
+| Intent resolution | Implemented through `/v1/intent/resolve` proxy | Depends on Control Plane intent API |
+| OIDC/JWKS identity | Implemented for JWT verification and forwarding | Demo Keycloak profile; production IdP via env |
+| Tenant attribution | Implemented with in-memory or Redis-backed counters | Attribution-grade usage events (best-effort) |
+| Dynamic policy engine | Extension point only | Not implemented; routing stays config/env driven |
 
-The next meaningful platform step is not another manifest. It is a dynamic policy engine that lets the control plane update routing strategy while the runtime keeps serving the OpenAI-compatible request path.
+Runtime v2.3 is feature-complete for the declared Supported scope. A dynamic
+policy engine that hot-reloads routing strategy remains an optional extension
+point — not a committed next release.

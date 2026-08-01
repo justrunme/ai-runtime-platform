@@ -13,7 +13,10 @@
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
-> **Execution Plane v2.0** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
+> **Execution Plane v2.3** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
+
+Current release: **Runtime v2.3.0**.  
+Recommended pair: **Control Plane v2.4.x + Runtime v2.3.x**.
 
 ```text
 OIDC Client
@@ -218,7 +221,16 @@ The gateway accepts the standard OpenAI chat-completions shape and reads model t
 
 ## Authentication
 
-Authentication is off by default so the local demo stays frictionless. Set `GATEWAY_API_KEYS` to a comma-separated list of keys to require one on every `/v1/*` request; `/healthz` and `/metrics` stay open for probes and scraping. Callers present the key as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+Authentication is off by default so the local demo stays frictionless. When
+`GATEWAY_API_KEYS` or OIDC/JWT verify is configured, a single middleware protects
+**all non-public routes** — not only `/v1/chat/completions`:
+
+- `/v1/*` (chat, models, routes, decisions, intent, runtime status/verify)
+- `/mcp/*`
+
+**Public** (no auth): `/livez`, `/readyz`, `/healthz`, `/metrics`,
+`/v1/runtime/jwks`. Callers present a key as `Authorization: Bearer <key>` or
+`X-API-Key: <key>` (API-key mode), or a verified Bearer JWT (OIDC mode).
 
 ```sh
 curl http://localhost:8080/v1/chat/completions \
@@ -415,13 +427,18 @@ docs/                 Architecture and operational decisions
 - [KServe](https://kserve.github.io/kserve/) provides the Kubernetes-native generative/predictive inference surface; its [Standard deployment mode](https://kserve.github.io/website/docs/admin-guide/kubernetes-deployment) supports optional KEDA custom-metric autoscaling.
 - [KEDA's Prometheus scaler](https://keda.sh/docs/2.8/scalers/prometheus/) requires a query that evaluates to one scalar/vector element.
 
-## Roadmap
+## Project status
 
-1. Extend Envoy AI Gateway policies and fleet-wide Redis tenant semaphores on top of the existing OIDC/JWT runtime boundary.
-2. Add Ray Serve LLM as a multi-model/pipeline deployment profile.
-3. Add SLO recording rules and alerts on the exported gateway and vLLM metrics for TTFT, TPOT, queue depth, and error budget (dashboards already ship in `deploy/observability`).
-4. Add canary analysis gates and rollback based on live latency/error signals.
-5. Add a reproducible benchmark report for a named GPU/model/version profile.
+Runtime v2.3 is feature-complete for the declared Supported scope.
+The project is now maintenance-oriented.
+
+Explicitly deferred:
+
+- fleet-wide distributed admission;
+- durable usage event broker;
+- shared MCP session storage;
+- tenant upstream credential resolution;
+- automated canary promotion and rollback.
 
 ## Security note
 

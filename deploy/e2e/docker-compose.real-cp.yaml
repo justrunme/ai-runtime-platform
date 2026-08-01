@@ -2,7 +2,7 @@
 # Keeps mock OpenAI + Redis + (optional) mock OIDC from the base/oidc files.
 services:
   control-plane:
-    image: ${CONTROL_PLANE_IMAGE:-ghcr.io/justrunme/ai-infra-control-plane:2.0.0}
+    image: ${CONTROL_PLANE_IMAGE:-ghcr.io/justrunme/ai-infra-control-plane:2.4.0}
     environment:
       DATABASE_URL: sqlite:////var/lib/ai-control-plane/control-plane.db
       OTEL_SDK_DISABLED: "true"
