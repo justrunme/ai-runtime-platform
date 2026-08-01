@@ -15,6 +15,8 @@ def test_closed_loop_routes_are_registered() -> None:
         "/v1/runtime/jwks",
         "/mcp/tools/{tool_name}/call",
         "/mcp/servers",
+        "/mcp/servers/{server_name}/initialize",
+        "/mcp/servers/{server_name}/cancel",
         "/livez",
         "/readyz",
         "/metrics",

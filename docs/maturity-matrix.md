@@ -19,8 +19,8 @@
 | `/livez` `/readyz` | Supported | Production probes; draining status |
 | Observed streaming lifecycle | Supported | TTFT + terminal outcomes |
 | Usage events | Supported | OTEL + retrying webhook worker; streaming usage when upstream emits it |
-| MCP Streamable HTTP (JSON) | Reference | Stateless `tools/call`; requires CP unless `MCP_ALLOW_UNGOVERNED` |
-| MCP session / SSE lifecycle | Experimental | Not implemented |
+| MCP Streamable HTTP (JSON) | Supported | Governed `tools/call`; requires CP unless `MCP_ALLOW_UNGOVERNED` |
+| MCP session / SSE lifecycle | Supported | initialize + `Mcp-Session-Id`, SSE parse, cancel, capability digest |
 | Tenant upstream credentials | Experimental | `upstreamCredentialRef` reserved |
 | Intent resolve proxy | Reference | Depends on Control Plane |
 | vLLM Helm chart | Supported | OCI publish + cosign |
