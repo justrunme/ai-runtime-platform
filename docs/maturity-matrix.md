@@ -3,7 +3,7 @@
 | Component | Status | Notes |
 | --- | --- | --- |
 | OpenAI chat/completions gateway | Supported | Frozen OpenAPI, SDK tests |
-| Control Plane evaluate/approval | Supported | `x-ai-approval-id` redemption; release e2e vs CP 2.0 + 1.3 |
+| Control Plane evaluate/approval | Supported | `x-ai-approval-id` redemption; release e2e vs CP 2.4 + supported baseline 2.0 + legacy 1.3 |
 | JWT/JWKS identity | Supported | Fail-closed when enabled; iss/aud in production |
 | Enforcement evidence headers | Supported | Decision/policy/request digests; OpenAI body clean |
 | Runtime status / verify | Supported | GitOps close-loop; signed verify token + JWKS; RBAC when JWT verify on |

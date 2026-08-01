@@ -32,7 +32,7 @@ services:
         condition: service_healthy
 
   control-plane-b:
-    image: ${CONTROL_PLANE_IMAGE:-ghcr.io/justrunme/ai-infra-control-plane:2.0.0}
+    image: ${CONTROL_PLANE_IMAGE:-ghcr.io/justrunme/ai-infra-control-plane:2.4.0}
     environment:
       DATABASE_URL: postgresql://cp:cp@postgres:5432/control_plane
       OTEL_SDK_DISABLED: "true"

@@ -8,17 +8,16 @@ All non-public routes pass through `AuthenticationMiddleware` before handlers ru
 - `/readyz`
 - `/healthz`
 - `/metrics` (scrape; restrict at NetworkPolicy / mesh in production)
+- `/v1/runtime/jwks` (public keys for signed verify tokens)
 
 ## Protected routes
 
-Everything else, including:
+Everything else when API keys or JWT verify are configured, including:
 
-- `/v1/models`
-- `/v1/routes`
-- `/v1/backends/health`
-- `/v1/decisions/{id}`
-- `/v1/chat/completions`
-- MCP / intent proxies
+- `/v1/models`, `/v1/routes`, `/v1/backends/health`
+- `/v1/decisions/{id}`, `/v1/chat/completions`, `/v1/intent/resolve`
+- `/v1/runtime/status`, `/v1/runtime/verify`
+- `/mcp/*` (tools, servers, initialize, cancel)
 
 ## Modes
 

@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         control_plane:
-          - "2.0.0"
+          - "2.4.0"
     env:
       CONTROL_PLANE_IMAGE: ghcr.io/justrunme/ai-infra-control-plane:${{ matrix.control_plane }}
     steps:

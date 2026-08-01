@@ -17,8 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         control_plane:
-          - "2.0.0" # current stable pair
-          - "1.3.0" # backward compatibility
+          - "2.4.0" # current stable pair
+          - "2.0.0" # supported 2.x baseline
+          - "1.3.0" # legacy compatibility
     uses: ./.github/workflows/platform-e2e-real-cp-reusable.yaml
     with:
       control_plane_image: ghcr.io/justrunme/ai-infra-control-plane:${{ matrix.control_plane }}

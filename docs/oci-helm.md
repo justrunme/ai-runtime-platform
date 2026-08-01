@@ -20,8 +20,8 @@ oci://ghcr.io/justrunme/charts/vllm-runtime:<semver>
 Manual:
 
 ```bash
-helm package charts/vllm-runtime --version 1.3.0 --app-version 1.3.0
-helm push vllm-runtime-1.3.0.tgz oci://ghcr.io/justrunme/charts
+helm package charts/vllm-runtime --version 2.3.0 --app-version 2.3.0
+helm push vllm-runtime-2.3.0.tgz oci://ghcr.io/justrunme/charts
 ```
 
 Gateway image remains:

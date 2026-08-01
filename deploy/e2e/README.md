@@ -35,9 +35,9 @@ docker compose \
 ./deploy/e2e/run_e2e_real_cp.sh
 ```
 
-Uses `ghcr.io/justrunme/ai-infra-control-plane:2.0.0` by default (`CONTROL_PLANE_IMAGE` override).
-Nightly/manual: matrix over CP `2.0.0`, `1.3.0`, and `main`.
-Tag release: reusable workflow matrix (`2.0.0` + `1.3.0`) is a hard gate before image/chart publish.
+Uses `ghcr.io/justrunme/ai-infra-control-plane:2.4.0` by default (`CONTROL_PLANE_IMAGE` override).
+Nightly/manual: matrix over CP `2.4.0`, `2.0.0`, `1.3.0`, and `main`.
+Tag release: reusable workflow matrix (`2.4.0` + `2.0.0` + `1.3.0`) is a hard gate before image/chart publish.
 
 ## Nightly HA closed-loop
 

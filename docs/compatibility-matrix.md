@@ -2,18 +2,20 @@
 
 | Control Plane | Runtime | Status |
 | --- | --- | --- |
-| 1.0.x | 1.0.x | Supported |
-| 1.1.x | 1.0.x | Backward compatible |
-| 1.x | 1.1.x / 1.2.x / 1.3.x | Supported (evaluate + `x-ai-approval-id`) |
-| 1.3.x / 1.4.x | 1.4.x | Supported + enforcement evidence headers; signed `decision_token` optional until CP emits it |
-| 1.5.x | 1.5.x | Supported + `/v1/runtime/status` and `/v1/runtime/verify` for remediation close-loop |
-| 1.6.x | 1.6.x | Supported + tenant-scoped decisions/admission; CP tenant RBAC should align claim names |
-| 1.7.x | 1.7.x | Supported + global load-shed / circuit / drain; no CP API break |
-| 1.8.x | 1.8.x | Supported + MCP Streamable HTTP execution after evaluate-tool |
-| 1.9.x | 1.9.x | Supported + usage event emission for CP chargeback |
-| 1.3.x | 2.0.x | Backward-compatible release gate (evaluate + approval) |
-| 2.0.x / 2.1.x | **2.0.x** | **Primary stable pair** — release gate + evidence/verify/tenant/MCP |
-| 2.x | 1.x | Requires migration guide |
+| **2.4.x** | **2.3.x** | **Current stable pair** — release gate + evidence/verify/tenant/MCP/capability digests |
+| 2.0.x–2.3.x | 2.3.x | Backward-compatible 2.x contract (evaluate, approval, verify, MCP) |
+| 1.3.x | 2.3.x | Legacy compatibility gate (evaluate + approval) |
+| 2.x | 1.x | Migration required — see [upgrade guide](upgrade-guide.md) |
+
+Historical pairs (still documented for upgrades):
+
+| Control Plane | Runtime | Notes |
+| --- | --- | --- |
+| 1.0.x–1.2.x | 1.0.x–1.2.x | Early evaluate path |
+| 1.3.x / 1.4.x | 1.4.x | Enforcement evidence headers |
+| 1.5.x | 1.5.x | `/v1/runtime/status` + `/v1/runtime/verify` |
+| 1.6.x–1.9.x | 1.6.x–1.9.x | Tenant admission, MCP, usage events |
+| 1.3.x | 2.0.x | Prior release-gate legacy pin |
 
 Frozen contracts:
 

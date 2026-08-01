@@ -6,6 +6,7 @@
 2. Optionally pin `capabilityDigest` in `MCP_SERVER_REGISTRY` after first initialize.
 3. Credentials remain `env:NAME` only (no inline secrets).
 4. Cancel in-flight calls with `POST /mcp/servers/{name}/cancel` + `request_id`.
+5. Prefer the release pair **Control Plane `2.4.x` + Runtime `2.3.x`** (gate also proves CP `2.0.0` and legacy `1.3.0`).
 
 ## To v2.2.0
 

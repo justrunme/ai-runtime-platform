@@ -1,7 +1,11 @@
 # Usage events
 
-Runtime emits chargeback-quality usage events. Control Plane aggregates; Runtime
-does not store a billing ledger.
+Runtime emits **attribution-grade, best-effort** usage events. Control Plane may
+aggregate them; Runtime does not store a billing ledger.
+
+Events can be lost on pod crash, buffer overflow, max delivery attempts, or
+shutdown timeout. For billing-grade delivery, use an external durable event sink
+or broker.
 
 ## Event shape
 

@@ -1,4 +1,4 @@
-# Closed-loop contract (Runtime 2.0)
+# Closed-loop contract (Runtime 2.3)
 
 Stable Execution Plane contract for Control Plane closed-loop governance.
 
@@ -69,6 +69,11 @@ tenant isolation across replicas, and SIGTERM during stream.
 
 ## Compatibility
 
-See [compatibility matrix](compatibility-matrix.md). Runtime `2.2.x` pairs with
-Control Plane `2.0+` for HA/Postgres closed-loop proofs and `1.5+` for
-status/verify; MCP execution requires CP evaluate-tool + registry alignment.
+See [compatibility matrix](compatibility-matrix.md).
+
+**Current stable pair:** Runtime `2.3.x` + Control Plane `2.4.x`.
+
+That pair covers signed runtime verification, local request-digest binding on
+approvals, MCP sessions/SSE/cancel, and capability digest pinning. HA/Postgres
+closed-loop proofs remain on the nightly matrix; MCP execution still requires
+CP evaluate-tool + registry alignment.
