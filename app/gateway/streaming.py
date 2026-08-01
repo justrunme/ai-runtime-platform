@@ -37,6 +37,7 @@ class StreamObservation:
     ttft_ms: float | None
     bytes_sent: int
     saw_done: bool
+    usage: dict[str, Any] | None = None
 
 
 OnComplete = Callable[[StreamObservation], Awaitable[None]]
@@ -75,10 +76,13 @@ async def observe_upstream_stream(
     on_complete: OnComplete | None = None,
 ) -> AsyncIterator[bytes]:
     """Yield upstream bytes and finalize metrics/state after the stream ends."""
+    from app.gateway.usage_events import extract_usage_from_sse
+
     started_at = time.monotonic()
     first_byte_at: float | None = None
     bytes_sent = 0
     saw_done = False
+    usage: dict[str, Any] | None = None
     error: BaseException | None = None
     try:
         async for chunk in upstream.aiter_bytes():
@@ -90,6 +94,9 @@ async def observe_upstream_stream(
             bytes_sent += len(chunk)
             if b"[DONE]" in chunk:
                 saw_done = True
+            found = extract_usage_from_sse(chunk)
+            if found is not None:
+                usage = found
             yield chunk
     except BaseException as exc:  # noqa: BLE001 - must classify every terminal path
         error = exc
@@ -105,6 +112,7 @@ async def observe_upstream_stream(
             else round((first_byte_at - started_at) * 1000, 2),
             bytes_sent=bytes_sent,
             saw_done=saw_done,
+            usage=usage,
         )
         STREAM_OUTCOMES.labels(outcome=outcome, selected_backend=selected_backend).inc()
         STREAM_DURATION.labels(selected_backend=selected_backend, outcome=outcome).observe(

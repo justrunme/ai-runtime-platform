@@ -332,6 +332,31 @@ async def _chat_completions_admitted(
                             ),
                             tenant_id=tenant_id,
                         )
+                        usage_emitter = getattr(request.app.state, "usage_events", None)
+                        if usage_emitter is not None:
+                            in_tok, out_tok = tokens_from_usage(observation.usage)
+                            stream_cost = None
+                            target_for_cost = settings.model_targets.get(selected_model)
+                            if observation.usage is not None and target_for_cost is not None:
+                                stream_cost = request_cost(observation.usage, target_for_cost)
+                            await usage_emitter.emit(
+                                usage_emitter.build(
+                                    tenant_id=tenant_id,
+                                    request_id=request_id,
+                                    decision_id=(
+                                        evidence.control_plane_decision_id if evidence else None
+                                    ),
+                                    model=str(requested_model or selected_model),
+                                    backend=selected_model,
+                                    input_tokens=in_tok,
+                                    output_tokens=out_tok,
+                                    estimated_cost_usd=stream_cost,
+                                    duration_ms=observation.duration_ms,
+                                    outcome=observation.outcome,
+                                    ttft_ms=observation.ttft_ms,
+                                    gpu_seconds=estimate_gpu_seconds(observation.duration_ms),
+                                )
+                            )
                     finally:
                         if lease is not None:
                             await lease.release()
