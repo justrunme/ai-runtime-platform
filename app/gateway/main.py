@@ -18,6 +18,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app.gateway.admission import TenantAdmissionController
 from app.gateway.auth import PUBLIC_PATHS, install_authentication, request_is_authorized
 from app.gateway.config import (
     GatewaySettings,
@@ -72,6 +73,7 @@ from app.gateway.stores.health import (
     health_probe_loop,
 )
 from app.gateway.tenant import create_tenant_store
+from app.gateway.tenant_policy import load_tenant_policy_bundle
 
 # Re-exports for existing tests and importers.
 __all__ = [
@@ -137,6 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = GatewaySettings.from_environment()
     app.state.settings = settings
     app.state.runtime_config = RuntimeConfigState.from_settings(settings)
+    app.state.admission = TenantAdmissionController(load_tenant_policy_bundle())
     app.state.client = httpx.AsyncClient(timeout=settings.timeout_seconds)
     app.state.backend_health = create_health_store(settings, app.state.client)
     app.state.decision_store = create_decision_store(settings.redis_url)
@@ -160,7 +163,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="1.5.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="1.6.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
 install_authentication(app)

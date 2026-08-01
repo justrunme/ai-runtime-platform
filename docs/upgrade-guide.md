@@ -1,5 +1,12 @@
 # Upgrade guide
 
+## To v1.6.0
+
+1. Decision Redis keys are tenant-scoped; flush or accept dual-read of legacy `arp:decision:*`.
+2. Configure `TENANT_RUNTIME_POLICY` for allowlists and concurrency limits.
+3. Decision lookup is tenant-bound; grant auditor groups for cross-tenant forensics.
+4. See [tenant isolation](tenant-isolation.md).
+
 ## To v1.5.0
 
 1. New authenticated endpoints: `GET /v1/runtime/status`, `POST /v1/runtime/verify`.

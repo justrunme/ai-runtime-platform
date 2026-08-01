@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.0
+
+Tenant isolation on the execution plane.
+
+- Decision records store `tenant_id`; Redis keys `arp:{tenant}:decision:{id}`
+- `GET /v1/decisions/{id}` requires matching JWT tenant (global auditor groups bypass)
+- `TENANT_RUNTIME_POLICY` allowlists + per-tenant concurrency/queue limits
+- `429` with `Retry-After` / rate-limit headers on admission overflow
+- Tenant attribution counters use JWT tenant (not spoofable headers when JWT is on)
+
 ## 1.5.0
 
 Runtime status, config digest, and verification API.
