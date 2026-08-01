@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-runtime-gateway
+  namespace: ai-runtime
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: gateway
+          env:
+            - name: GATEWAY_REPLICAS
+              value: "1"
+            - name: REQUIRE_SHARED_STATE
+              value: "false"
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10

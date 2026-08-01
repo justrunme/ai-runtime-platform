@@ -5,8 +5,7 @@ metadata:
   namespace: ai-runtime
   labels:
     app.kubernetes.io/name: ai-runtime-gateway
-# Starting policy: ingress only on the gateway port, egress restricted to model
-# backends, the OTLP collector, and cluster DNS. Tighten the selectors per cluster.
+# Component-scoped egress. Overlay patches may further restrict namespaceSelectors.
 spec:
   podSelector:
     matchLabels:
@@ -19,18 +18,53 @@ spec:
         - port: http
           protocol: TCP
   egress:
+    # Model backends (OpenAI-compatible / vLLM)
     - to:
-        - namespaceSelector: {}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: ai-runtime
       ports:
         - port: 8000
           protocol: TCP
+        - port: 11434
+          protocol: TCP
+    # Control Plane
     - to:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-control-plane
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 80
+          protocol: TCP
+    # Redis shared state
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    # OpenTelemetry collector
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
       ports:
         - port: 4318
           protocol: TCP
-    - ports:
+    # Cluster DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+    # JWKS / external IdP HTTPS
+    - ports:
+        - port: 443
           protocol: TCP

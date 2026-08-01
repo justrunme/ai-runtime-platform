@@ -38,6 +38,7 @@ from app.gateway.evaluations import (
 from app.gateway.governance import GovernanceConfig, enforce_governance
 from app.gateway.intent import resolve_intent
 from app.gateway.mcp import enforce_tool_governance, governed_tool_response
+from app.gateway.readiness import build_readiness_report
 from app.gateway.tenant import TenantAttributionBackend, create_tenant_store
 
 CHAT_REQUESTS = Counter(
@@ -168,6 +169,8 @@ class GatewaySettings(BaseModel):
     health_interval_seconds: float = Field(default=15.0, gt=0)
     api_keys: frozenset[str] = Field(default_factory=frozenset)
     redis_url: str | None = None
+    gateway_replicas: int = Field(default=1, ge=1)
+    require_shared_state: bool = False
 
     @model_validator(mode="after")
     def route_targets_exist(self) -> GatewaySettings:
@@ -179,6 +182,14 @@ class GatewaySettings(BaseModel):
         }
         if missing:
             raise ValueError(f"route references unknown models: {', '.join(sorted(missing))}")
+        return self
+
+    @model_validator(mode="after")
+    def shared_state_required_for_ha(self) -> GatewaySettings:
+        if self.require_shared_state and not self.redis_url:
+            raise ValueError(
+                "REDIS_URL is required when REQUIRE_SHARED_STATE=true or GATEWAY_REPLICAS > 1"
+            )
         return self
 
     @classmethod
@@ -218,6 +229,16 @@ class GatewaySettings(BaseModel):
         raw_routes = os.getenv("MODEL_ROUTES")
         raw_api_keys = os.getenv("GATEWAY_API_KEYS", "")
         api_keys = frozenset(key.strip() for key in raw_api_keys.split(",") if key.strip())
+        gateway_replicas = max(1, int(os.getenv("GATEWAY_REPLICAS", "1")))
+        require_shared_state = (
+            os.getenv("REQUIRE_SHARED_STATE", "").strip().lower()
+            in {
+                "1",
+                "true",
+                "yes",
+            }
+            or gateway_replicas > 1
+        )
         return cls.model_validate(
             {
                 "model_targets": model_targets,
@@ -228,6 +249,8 @@ class GatewaySettings(BaseModel):
                 ),
                 "api_keys": api_keys,
                 "redis_url": os.getenv("REDIS_URL") or None,
+                "gateway_replicas": gateway_replicas,
+                "require_shared_state": require_shared_state,
             }
         )
 
@@ -270,22 +293,41 @@ class BackendHealth:
     request_count: int = 0
     error_count: int = 0
     fallback_count: int = 0
+    ewma_error_rate: float = 0.0
+    consecutive_failures: int = 0
+    updated_at: float = 0.0
 
     def score(self) -> int:
         if self.available is False:
             return 0
+        # Prefer EWMA so short outages stop dominating forever.
+        error_rate = self.ewma_error_rate if self.request_count else 0.0
         latency_penalty = min((self.latency_ms or 0) / 20, 30)
-        error_penalty = self.error_rate * 50
+        error_penalty = error_rate * 50
         fallback_penalty = self.fallback_rate * 20
-        return round(max(0, 100 - latency_penalty - error_penalty - fallback_penalty))
+        score = round(max(0, 100 - latency_penalty - error_penalty - fallback_penalty))
+        if self.consecutive_failures >= 3:
+            return min(score, 20)
+        return score
 
     @property
     def error_rate(self) -> float:
-        return self.error_count / self.request_count if self.request_count else 0.0
+        return self.ewma_error_rate if self.request_count else 0.0
 
     @property
     def fallback_rate(self) -> float:
         return self.fallback_count / self.request_count if self.request_count else 0.0
+
+
+def _apply_request_signal(health: BackendHealth, *, success: bool, fallback_used: bool) -> None:
+    alpha = 0.3
+    sample = 0.0 if success else 1.0
+    health.request_count += 1
+    health.error_count += int(not success)
+    health.fallback_count += int(fallback_used)
+    health.ewma_error_rate = alpha * sample + (1 - alpha) * health.ewma_error_rate
+    health.consecutive_failures = 0 if success else health.consecutive_failures + 1
+    health.updated_at = time.time()
 
 
 def _format_health_row(model: str, target: ModelTarget, health: BackendHealth) -> dict[str, object]:
@@ -344,6 +386,9 @@ class HealthStore:
     async def aclose(self) -> None:
         return None
 
+    async def ping(self) -> bool:
+        return True
+
     async def _store_probe(self, model: str, available: bool, latency_ms: float) -> None:
         raise NotImplementedError
 
@@ -373,10 +418,7 @@ class BackendHealthStore(HealthStore):
         self, model: str, *, success: bool, fallback_used: bool = False
     ) -> None:
         async with self._lock:
-            health = self._health[model]
-            health.request_count += 1
-            health.error_count += int(not success)
-            health.fallback_count += int(fallback_used)
+            _apply_request_signal(self._health[model], success=success, fallback_used=fallback_used)
 
     async def _load(self, model: str) -> BackendHealth:
         async with self._lock:
@@ -387,6 +429,9 @@ class BackendHealthStore(HealthStore):
                 request_count=current.request_count,
                 error_count=current.error_count,
                 fallback_count=current.fallback_count,
+                ewma_error_rate=current.ewma_error_rate,
+                consecutive_failures=current.consecutive_failures,
+                updated_at=current.updated_at,
             )
 
 
@@ -404,17 +449,42 @@ class RedisHealthStore(HealthStore):
     async def _store_probe(self, model: str, available: bool, latency_ms: float) -> None:
         await self._redis.hset(
             self._key(model),
-            mapping={"available": "1" if available else "0", "latency_ms": latency_ms},
+            mapping={
+                "available": "1" if available else "0",
+                "latency_ms": latency_ms,
+                "updated_at": time.time(),
+            },
         )
 
     async def record_request(
         self, model: str, *, success: bool, fallback_used: bool = False
     ) -> None:
-        pipe = self._redis.pipeline()
-        pipe.hincrby(self._key(model), "request_count", 1)
-        pipe.hincrby(self._key(model), "error_count", int(not success))
-        pipe.hincrby(self._key(model), "fallback_count", int(fallback_used))
-        await pipe.execute()
+        key = self._key(model)
+        data = await self._redis.hgetall(key)
+        health = BackendHealth(
+            available=None if data.get("available") is None else data.get("available") == "1",
+            latency_ms=float(data["latency_ms"])
+            if data.get("latency_ms") not in (None, "")
+            else None,
+            request_count=int(data.get("request_count", 0)),
+            error_count=int(data.get("error_count", 0)),
+            fallback_count=int(data.get("fallback_count", 0)),
+            ewma_error_rate=float(data.get("ewma_error_rate", 0) or 0),
+            consecutive_failures=int(data.get("consecutive_failures", 0) or 0),
+            updated_at=float(data.get("updated_at", 0) or 0),
+        )
+        _apply_request_signal(health, success=success, fallback_used=fallback_used)
+        await self._redis.hset(
+            key,
+            mapping={
+                "request_count": health.request_count,
+                "error_count": health.error_count,
+                "fallback_count": health.fallback_count,
+                "ewma_error_rate": health.ewma_error_rate,
+                "consecutive_failures": health.consecutive_failures,
+                "updated_at": health.updated_at,
+            },
+        )
 
     async def _load(self, model: str) -> BackendHealth:
         data = await self._redis.hgetall(self._key(model))
@@ -427,7 +497,13 @@ class RedisHealthStore(HealthStore):
             request_count=int(data.get("request_count", 0)),
             error_count=int(data.get("error_count", 0)),
             fallback_count=int(data.get("fallback_count", 0)),
+            ewma_error_rate=float(data.get("ewma_error_rate", 0) or 0),
+            consecutive_failures=int(data.get("consecutive_failures", 0) or 0),
+            updated_at=float(data.get("updated_at", 0) or 0),
         )
+
+    async def ping(self) -> bool:
+        return bool(await self._redis.ping())
 
     async def aclose(self) -> None:
         await self._redis.aclose()
@@ -727,7 +803,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.client.aclose()
 
 
-PUBLIC_PATHS = frozenset({"/healthz", "/metrics"})
+PUBLIC_PATHS = frozenset({"/healthz", "/livez", "/readyz", "/metrics"})
 
 
 def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
@@ -739,7 +815,7 @@ def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="0.3.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 
 
@@ -757,9 +833,23 @@ async def enforce_api_key(request: Request, call_next):
     return await call_next(request)
 
 
+@app.get("/livez")
+async def livez() -> dict[str, str]:
+    """Process is alive; used for liveness probes."""
+    return {"status": "ok"}
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+    """Backward-compatible alias for /livez."""
+    return await livez()
+
+
+@app.get("/readyz")
+async def readyz(request: Request) -> JSONResponse:
+    """Readiness: config, shared state, optional control plane, usable routes."""
+    ready, report = await build_readiness_report(request.app)
+    return JSONResponse(status_code=200 if ready else 503, content=report)
 
 
 @app.get("/metrics")

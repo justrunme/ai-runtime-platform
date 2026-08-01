@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-runtime-gateway-config
+  namespace: ai-runtime
+data:
+  GATEWAY_REPLICAS: "2"
+  REQUIRE_SHARED_STATE: "true"
+  REDIS_URL: redis://redis.ai-runtime.svc.cluster.local:6379/0
