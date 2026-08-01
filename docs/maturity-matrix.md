@@ -29,3 +29,23 @@
 | Argo Rollouts canary | Experimental | Example only |
 
 Supported means covered by tests/docs and intended for production profiles. Reference means usable examples. Experimental means may change without notice.
+
+## Recommended pair
+
+| Control Plane | Runtime | Status |
+| --- | --- | --- |
+| **2.4.x** | **2.3.x** | Current stable — see [compatibility matrix](compatibility-matrix.md) |
+
+Release/nightly e2e also gates CP `2.0.0` (2.x baseline) and legacy `1.3.0`.
+
+## Honest limitations
+
+| Limitation | Status |
+| --- | --- |
+| Argo/Flux reconciliation from Runtime | Out of scope (Execution Plane proves; CP/GitOps applies) |
+| Usage queue durability | Attribution-grade, best-effort in-memory + webhook retries |
+| Fleet-wide concurrency | Per-replica admission limits |
+| MCP session HA | Process-local; sticky sessions or shared store required for multi-replica |
+| Tenant upstream credentials | Experimental / reserved |
+| Billing ledger | Not implemented |
+| Automated canary promotion/rollback | Deferred / experimental examples only |
