@@ -1,5 +1,11 @@
 # Upgrade guide
 
+## To v1.8.0
+
+1. Register MCP servers via `MCP_SERVER_REGISTRY` and inject credentials as env vars.
+2. Clients must pass `mcp_server` to execute; governance-only behavior remains without it.
+3. See [MCP execution](mcp-execution.md).
+
 ## To v1.7.0
 
 1. Tune `GATEWAY_MAX_INFLIGHT` / `GATEWAY_MAX_QUEUED` for GPU/node capacity.

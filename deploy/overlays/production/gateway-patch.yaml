@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: ghcr.io/justrunme/ai-runtime-platform:1.7.0
+          image: ghcr.io/justrunme/ai-runtime-platform:1.8.0
           env:
             - name: GATEWAY_PROFILE
               value: production

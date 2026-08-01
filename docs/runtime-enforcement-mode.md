@@ -57,7 +57,7 @@ Client hints (`x-ai-cost-*`, `x-ai-sensitive-data`, …) are forwarded only insi
 
 ## MCP governance reference
 
-`POST /mcp/tools/{tool}/call` is a **governance reference endpoint**, not a full MCP transport. It calls Control Plane `/governance/evaluate-tool` and returns a `governed_stub` response when allowed. Full MCP server registry / stdio / SSE execution is out of scope until the inference contract is stable.
+`POST /mcp/tools/{tool}/call` evaluates Control Plane `/governance/evaluate-tool`, then executes against a registered MCP server when `mcp_server` is set and `MCP_SERVER_REGISTRY` defines that server (Streamable HTTP + `env:` credential refs). Without a registry entry the call remains governance-only (`governed_allowed`).
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8090/mcp/tools/jira-read/call \

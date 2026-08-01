@@ -117,7 +117,7 @@ def test_governed_tool_response_shape() -> None:
         {"final_verdict": "allow"},
     )
     assert payload["tool"] == "jira-read"
-    assert payload["status"] == "governed_stub"
+    assert payload["status"] == "governed_allowed"
 
 
 @pytest.mark.anyio

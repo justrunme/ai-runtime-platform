@@ -9,6 +9,7 @@
 | 1.5.x | 1.5.x | Supported + `/v1/runtime/status` and `/v1/runtime/verify` for remediation close-loop |
 | 1.6.x | 1.6.x | Supported + tenant-scoped decisions/admission; CP tenant RBAC should align claim names |
 | 1.7.x | 1.7.x | Supported + global load-shed / circuit / drain; no CP API break |
+| 1.8.x | 1.8.x | Supported + MCP Streamable HTTP execution after evaluate-tool |
 | 2.x | 1.x | Requires migration guide |
 
 Frozen contracts:
