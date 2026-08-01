@@ -1,5 +1,13 @@
 # Upgrade guide
 
+## To v2.0.1
+
+1. No OpenAI body break from 2.0.0.
+2. Prefer release pair with Control Plane `2.0.x` (gate still proves `1.3.0` compatibility).
+3. MCP execution without Control Plane now returns `503` unless `MCP_ALLOW_UNGOVERNED=true`.
+4. When JWT verify is enabled, callers of `/v1/runtime/status|verify` and `/mcp/servers` need runtime roles (`platform-admin`, `runtime-service`, or auditor as documented).
+5. Tenant policy keys prefer `maxConcurrentRequestsPerReplica` (legacy alias still accepted).
+
 ## To v2.0.0
 
 1. Treat Runtime 2.0 as the stable closed-loop contract — see [closed-loop contract](closed-loop-contract.md).

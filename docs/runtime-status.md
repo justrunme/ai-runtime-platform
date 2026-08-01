@@ -3,6 +3,17 @@
 Control Plane GitOps remediations need proof that the Execution Plane loaded the
 intended configuration. Runtime exposes a stable status contract for that.
 
+## Authorization
+
+When JWT verification is enabled (or `GATEWAY_ENFORCE_RUNTIME_RBAC=true`):
+
+| Endpoint | Roles |
+| --- | --- |
+| `GET /v1/runtime/status` | `runtime-service`, `platform-admin`, auditor groups |
+| `POST /v1/runtime/verify` | `runtime-service`, `platform-admin` |
+
+Local demos without JWT verify remain open to authenticated/unauth local clients as before.
+
 ## Status
 
 ```http

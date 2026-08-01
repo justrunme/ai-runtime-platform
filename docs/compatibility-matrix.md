@@ -11,7 +11,8 @@
 | 1.7.x | 1.7.x | Supported + global load-shed / circuit / drain; no CP API break |
 | 1.8.x | 1.8.x | Supported + MCP Streamable HTTP execution after evaluate-tool |
 | 1.9.x | 1.9.x | Supported + usage event emission for CP chargeback |
-| 1.5+ / 2.x | **2.0.x** | **Stable closed-loop contract** (evidence + status/verify + tenant + MCP + usage) |
+| 1.3.x | 2.0.x | Backward-compatible release gate (evaluate + approval) |
+| 2.0.x / 2.1.x | **2.0.x** | **Primary stable pair** — release gate + evidence/verify/tenant/MCP |
 | 2.x | 1.x | Requires migration guide |
 
 Frozen contracts:

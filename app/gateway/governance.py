@@ -332,7 +332,7 @@ async def enforce_governance(
     from app.gateway.decision_token import bind_signed_decision
     from app.gateway.evidence import apply_evidence_headers, evidence_from_governance
 
-    result = await bind_signed_decision(result)
+    result = await bind_signed_decision(result, evaluate_payload=body)
     verdict = str(result.get("final_verdict", "unknown"))
     GOVERNANCE_DECISIONS.labels(verdict=verdict, team=body["team"]).inc()
 
