@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.0
+
+Real MCP execution transport.
+
+- `MCP_SERVER_REGISTRY` for Streamable HTTP servers + `env:` credential refs
+- Governed `POST /mcp/tools/{tool}/call` executes `tools/call` when `mcp_server` is set
+- Result size limit / truncation, optional CP audit post
+- `GET /mcp/servers` lists registered servers (no secret values)
+
 ## 1.7.0
 
 Resilience and process-wide admission control.

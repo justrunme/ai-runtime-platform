@@ -149,14 +149,25 @@ def governed_tool_response(
     tool_name: str,
     payload: dict[str, Any],
     governance_result: dict[str, Any] | None,
+    *,
+    execution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if execution is not None:
+        return {
+            "tool": tool_name,
+            "action": payload.get("action", "invoke"),
+            "status": "executed",
+            "arguments": payload.get("arguments", {}),
+            "governance": governance_result or {"final_verdict": "skipped"},
+            "execution": execution,
+        }
     return {
         "tool": tool_name,
         "action": payload.get("action", "invoke"),
-        "status": "governed_stub",
+        "status": "governed_allowed",
         "message": (
-            "MCP governance reference endpoint: tool call allowed by control plane. "
-            "Full MCP transport is not implemented yet."
+            "Tool call allowed by control plane, but no MCP server was registered "
+            "for execution (set MCP_SERVER_REGISTRY)."
         ),
         "arguments": payload.get("arguments", {}),
         "governance": governance_result or {"final_verdict": "skipped"},
