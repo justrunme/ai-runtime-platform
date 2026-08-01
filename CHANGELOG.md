@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0
+
+Stable closed-loop Execution Plane contract.
+
+- Declares frozen enforcement / verification / evidence / usage / MCP surfaces
+- Contract tests guard required routes and OpenAPI major version
+- Compatible with Control Plane closed-loop remediation + PolicyBundle correlation
+- Semver major marks the stable platform boundary (no intentional OpenAI body break from 1.9)
+
 ## 1.9.0
 
 Usage and cost event emission (no billing database).

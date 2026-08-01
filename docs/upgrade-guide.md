@@ -1,5 +1,11 @@
 # Upgrade guide
 
+## To v2.0.0
+
+1. Treat Runtime 2.0 as the stable closed-loop contract — see [closed-loop contract](closed-loop-contract.md).
+2. No intentional OpenAI body break from 1.9; clients should already consume evidence headers and `/v1/runtime/*`.
+3. Pin image `2.0.0` (or `2.0`) together with a Control Plane release that supports verify + evidence digests.
+
 ## To v1.9.0
 
 1. Optional: set `USAGE_EVENTS_WEBHOOK_URL` for webhook delivery (OTLP attributes always available).

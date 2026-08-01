@@ -186,7 +186,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="1.9.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="2.0.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
 install_authentication(app)

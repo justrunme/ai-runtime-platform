@@ -13,9 +13,9 @@
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
-> **Execution Plane v1.3** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — production-oriented execution-plane reference architecture with a fail-closed API auth boundary, combined e2e (including real Control Plane on release/nightly), and tested component contracts.
+> **Execution Plane v2.0** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
 
-This repository is the **Execution Plane**: routing, shared-state HA guards, observed streaming, Control Plane approval/enforcement, OIDC/JWT API auth, and vLLM serving. See [auth boundary](docs/auth-boundary.md), [maturity matrix](docs/maturity-matrix.md), [SLO targets](docs/slo.md), [compatibility matrix](docs/compatibility-matrix.md), [platform e2e](deploy/e2e/README.md), and [upgrade guide](docs/upgrade-guide.md).
+This repository is the **Execution Plane**: routing, shared-state HA, observed streaming, Control Plane enforcement evidence, runtime verify, tenant isolation, MCP transport, and usage events. See [closed-loop contract](docs/closed-loop-contract.md), [auth boundary](docs/auth-boundary.md), [compatibility matrix](docs/compatibility-matrix.md), [platform e2e](deploy/e2e/README.md), and [upgrade guide](docs/upgrade-guide.md).
 
 ## Platform Signals
 
