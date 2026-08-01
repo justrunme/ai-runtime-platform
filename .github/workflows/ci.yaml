@@ -43,6 +43,10 @@ jobs:
         run: helm template qwen charts/vllm-runtime | kubeconform -strict -ignore-missing-schemas -summary
       - name: Validate kustomize base
         run: kubectl kustomize deploy/base | kubeconform -strict -ignore-missing-schemas -summary
+      - name: Validate kustomize overlays
+        run: |
+          kubectl kustomize deploy/overlays/single-node | kubeconform -strict -ignore-missing-schemas -summary
+          kubectl kustomize deploy/overlays/production | kubeconform -strict -ignore-missing-schemas -summary
 
   docker:
     runs-on: ubuntu-latest

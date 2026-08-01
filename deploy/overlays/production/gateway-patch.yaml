@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-runtime-gateway
+  namespace: ai-runtime
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/justrunme/ai-runtime-platform:0.3.0
+          env:
+            - name: GATEWAY_REPLICAS
+              value: "2"
+            - name: REQUIRE_SHARED_STATE
+              value: "true"
+            - name: REDIS_URL
+              value: redis://redis.ai-runtime.svc.cluster.local:6379/0
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: ai-runtime-gateway
+            - name: GATEWAY_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ai-runtime-gateway-auth
+                  key: api-keys
+                  optional: true
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10

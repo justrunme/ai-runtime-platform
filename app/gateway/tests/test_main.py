@@ -190,7 +190,8 @@ async def test_backend_health_snapshot_uses_probes_and_request_signals() -> None
 
     assert snapshot[0]["name"] == "qwen-local"
     assert snapshot[0]["status"] == "healthy"
-    assert snapshot[0]["error_rate"] == 0.5
+    # EWMA(alpha=0.3): success then failure => 0.3
+    assert snapshot[0]["error_rate"] == pytest.approx(0.3)
     assert snapshot[0]["fallback_rate"] == 0.5
     assert snapshot[0]["score"] < 100
 
@@ -355,7 +356,7 @@ async def test_streaming_fallback_records_health_and_headers() -> None:
     assert response.headers["x-selected-backend"] == "llama"
     assert response.headers["x-fallback-used"] == "true"
     snapshot = {row["model"]: row for row in await app.state.backend_health.snapshot()}
-    assert snapshot["qwen"]["error_rate"] == 1.0
+    assert snapshot["qwen"]["error_rate"] == pytest.approx(0.3)
     assert snapshot["llama"]["fallback_rate"] == 1.0
     await upstream.aclose()
 
@@ -488,7 +489,7 @@ async def test_redis_health_store_is_shared_across_replicas() -> None:
         await replica_a.record_request("qwen", success=False, fallback_used=True)
         snapshot = {row["model"]: row for row in await replica_b.snapshot()}
         assert snapshot["qwen"]["status"] == "healthy"
-        assert snapshot["qwen"]["error_rate"] == 0.5
+        assert snapshot["qwen"]["error_rate"] == pytest.approx(0.3)
         assert snapshot["qwen"]["fallback_rate"] == 0.5
         assert await replica_b.meets_score("qwen", 50) is True
     await redis.aclose()

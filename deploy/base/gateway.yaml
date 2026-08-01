@@ -6,7 +6,8 @@ metadata:
   labels:
     app.kubernetes.io/name: ai-runtime-gateway
 spec:
-  replicas: 2
+  # Default is single-replica / in-memory. Use overlays/production for HA + Redis.
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: ai-runtime-gateway
@@ -34,7 +35,7 @@ spec:
               app.kubernetes.io/name: ai-runtime-gateway
       containers:
         - name: gateway
-          image: ghcr.io/justrunme/ai-runtime-platform:0.2.0
+          image: ghcr.io/justrunme/ai-runtime-platform:0.3.0
           ports:
             - name: http
               containerPort: 8080
@@ -42,6 +43,10 @@ spec:
             - configMapRef:
                 name: ai-runtime-gateway-config
           env:
+            - name: GATEWAY_REPLICAS
+              value: "1"
+            - name: REQUIRE_SHARED_STATE
+              value: "false"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_SERVICE_NAME
@@ -59,14 +64,22 @@ spec:
             capabilities:
               drop: ["ALL"]
             readOnlyRootFilesystem: true
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
+            periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: http
+            periodSeconds: 10
           resources:
             requests:
               cpu: 100m

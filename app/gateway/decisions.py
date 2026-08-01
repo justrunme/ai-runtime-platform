@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
@@ -29,6 +29,37 @@ class DecisionRecord:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any]) -> DecisionRecord:
+        return cls(
+            request_id=str(data["request_id"]),
+            requested_model=str(data["requested_model"]),
+            selected_backend=str(data["selected_backend"]),
+            routing_reason=str(data["routing_reason"]),
+            fallback_used=str(data.get("fallback_used", "false")).lower() in {"1", "true", "yes"}
+            if not isinstance(data.get("fallback_used"), bool)
+            else bool(data.get("fallback_used")),
+            health_score=(
+                None
+                if data.get("health_score") in (None, "", "None")
+                else int(float(data["health_score"]))
+            ),
+            duration_ms=float(data.get("duration_ms") or 0),
+            shadow_backend=data.get("shadow_backend") or None,
+            shadow_duration_ms=(
+                None
+                if data.get("shadow_duration_ms") in (None, "", "None")
+                else float(data["shadow_duration_ms"])
+            ),
+            shadow_outcome=data.get("shadow_outcome") or None,
+            estimated_cost=(
+                None
+                if data.get("estimated_cost") in (None, "", "None")
+                else float(data["estimated_cost"])
+            ),
+            recorded_at=float(data.get("recorded_at") or 0),
+        )
 
 
 def format_decision_tree(record: DecisionRecord | dict[str, object]) -> str:
@@ -67,6 +98,9 @@ class DecisionStore:
 
     async def aclose(self) -> None:
         return None
+
+    async def ping(self) -> bool:
+        return True
 
 
 class InMemoryDecisionStore(DecisionStore):
@@ -107,7 +141,7 @@ class InMemoryDecisionStore(DecisionStore):
 
 
 class RedisDecisionStore(DecisionStore):
-    """Share routing decisions across gateway replicas."""
+    """Share routing decisions across gateway replicas using Redis hashes."""
 
     def __init__(self, redis: Redis, *, ttl_seconds: int = 3600) -> None:
         self._redis = redis
@@ -117,33 +151,51 @@ class RedisDecisionStore(DecisionStore):
     def _key(request_id: str) -> str:
         return f"arp:decision:{request_id}"
 
+    @staticmethod
+    def _serialize(record: DecisionRecord) -> dict[str, str]:
+        payload: dict[str, str] = {}
+        for key, value in record.to_dict().items():
+            if value is None:
+                payload[key] = ""
+            elif isinstance(value, bool):
+                payload[key] = "true" if value else "false"
+            else:
+                payload[key] = str(value)
+        return payload
+
     async def put(self, record: DecisionRecord) -> None:
         stamped = DecisionRecord(**{**record.to_dict(), "recorded_at": time.time()})
-        await self._redis.set(
-            self._key(record.request_id),
-            json.dumps(stamped.to_dict()),
-            ex=self._ttl_seconds,
-        )
+        key = self._key(record.request_id)
+        pipe = self._redis.pipeline()
+        pipe.hset(key, mapping=self._serialize(stamped))
+        pipe.expire(key, self._ttl_seconds)
+        await pipe.execute()
 
     async def get(self, request_id: str) -> DecisionRecord | None:
-        raw = await self._redis.get(self._key(request_id))
-        if raw is None:
+        data = await self._redis.hgetall(self._key(request_id))
+        if not data:
             return None
-        data = json.loads(raw)
-        return DecisionRecord(**data)
+        # Compatibility with previous JSON-blob values.
+        if len(data) == 1 and "data" in data:
+            return DecisionRecord(**json.loads(data["data"]))
+        return DecisionRecord.from_mapping(data)
 
     async def patch_shadow(self, request_id: str, *, outcome: str, duration_ms: float) -> None:
-        current = await self.get(request_id)
-        if current is None:
-            return
-        updated = DecisionRecord(
-            **{
-                **current.to_dict(),
+        key = self._key(request_id)
+        # Atomic field update — avoids lost updates from concurrent read-modify-write.
+        updated = await self._redis.hset(
+            key,
+            mapping={
                 "shadow_outcome": outcome,
-                "shadow_duration_ms": duration_ms,
-            }
+                "shadow_duration_ms": str(duration_ms),
+            },
         )
-        await self.put(updated)
+        if updated == 0 and not await self._redis.exists(key):
+            return
+        await self._redis.expire(key, self._ttl_seconds)
+
+    async def ping(self) -> bool:
+        return bool(await self._redis.ping())
 
     async def aclose(self) -> None:
         await self._redis.aclose()
