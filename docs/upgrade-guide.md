@@ -1,5 +1,11 @@
 # Upgrade guide
 
+## To v1.3.1
+
+1. No API or config breaking changes from 1.3.0.
+2. Tag releases now publish image/chart only after real Control Plane compatibility proof succeeds.
+3. Operators should prefer `1.3.1` over `1.3.0` for supply-chain integrity (same runtime auth/governance surface).
+
 ## To v1.3.0
 
 1. All non-public routes require auth when JWT or API keys are configured — including `/v1/models` and `/v1/decisions/{id}`.

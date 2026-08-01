@@ -1,0 +1,48 @@
+name: Reusable real Control Plane e2e
+
+on:
+  workflow_call:
+    inputs:
+      control_plane_image:
+        description: Published Control Plane image tag used for compatibility proof
+        type: string
+        required: false
+        default: ghcr.io/justrunme/ai-infra-control-plane:1.3.0
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  real-control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Start real Control Plane stack
+        env:
+          CONTROL_PLANE_IMAGE: ${{ inputs.control_plane_image }}
+        run: |
+          docker compose \
+            -f deploy/e2e/docker-compose.yaml \
+            -f deploy/e2e/docker-compose.oidc.yaml \
+            -f deploy/e2e/docker-compose.real-cp.yaml \
+            up --build -d
+      - name: Run real Control Plane golden paths
+        run: ./deploy/e2e/run_e2e_real_cp.sh
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          docker compose \
+            -f deploy/e2e/docker-compose.yaml \
+            -f deploy/e2e/docker-compose.oidc.yaml \
+            -f deploy/e2e/docker-compose.real-cp.yaml \
+            logs --no-color | tail -n 500
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose \
+            -f deploy/e2e/docker-compose.yaml \
+            -f deploy/e2e/docker-compose.oidc.yaml \
+            -f deploy/e2e/docker-compose.real-cp.yaml \
+            down -v

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.1
+
+Release integrity fix.
+
+- Real Control Plane e2e no longer fails when evaluate response omits `request_digest` (verify via durable decision API)
+- Approver JWT sent on approve/reject against real Control Plane
+- Clearer HTTP failure dumps in real CP golden-path script
+- Release workflow gates image/chart publish on reusable real CP e2e (`needs`)
+- Tag no longer runs a parallel ungated real CP workflow
+
 ## 1.3.0
 
 Real platform compatibility proof.

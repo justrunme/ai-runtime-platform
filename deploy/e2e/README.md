@@ -36,7 +36,8 @@ docker compose \
 ```
 
 Uses `ghcr.io/justrunme/ai-infra-control-plane:1.3.0` by default (`CONTROL_PLANE_IMAGE` override).
-Workflow: `.github/workflows/platform-e2e-real-cp.yaml`.
+Nightly/manual: `.github/workflows/platform-e2e-real-cp.yaml`.
+Tag release: reusable workflow is a hard gate before image/chart publish.
 
 | Component | Version intent |
 | --- | --- |
