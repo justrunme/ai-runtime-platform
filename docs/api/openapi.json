@@ -16,10 +16,32 @@
       },
       "RuntimeVerifyRequest": {
         "properties": {
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
           "expected": {
             "additionalProperties": true,
             "title": "Expected",
             "type": "object"
+          },
+          "remediation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation Id"
           }
         },
         "title": "RuntimeVerifyRequest",
@@ -69,7 +91,7 @@
   },
   "info": {
     "title": "AI Runtime Gateway",
-    "version": "2.1.0"
+    "version": "2.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -389,6 +411,26 @@
         "summary": "List Routes",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/v1/runtime/jwks": {
+      "get": {
+        "description": "Public JWKS for Control Plane verification of signed verify responses.",
+        "operationId": "runtime_jwks_v1_runtime_jwks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Jwks",
+        "tags": [
+          "runtime"
         ]
       }
     },

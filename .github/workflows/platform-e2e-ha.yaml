@@ -1,0 +1,61 @@
+name: Platform e2e (HA closed-loop)
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  ha-closed-loop:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        control_plane:
+          - "2.0.0"
+    env:
+      CONTROL_PLANE_IMAGE: ghcr.io/justrunme/ai-infra-control-plane:${{ matrix.control_plane }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Generate Runtime verify signing key
+        run: |
+          openssl genrsa -out /tmp/runtime-verify-e2e.pem 2048
+          {
+            echo "RUNTIME_VERIFY_PRIVATE_KEY_B64<<EOF"
+            base64 -w0 /tmp/runtime-verify-e2e.pem
+            echo
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+      - name: Start HA stack
+        run: |
+          docker compose \
+            -f deploy/e2e/docker-compose.yaml \
+            -f deploy/e2e/docker-compose.oidc.yaml \
+            -f deploy/e2e/docker-compose.real-cp.yaml \
+            -f deploy/e2e/docker-compose.ha.yaml \
+            up --build -d
+      - name: Run HA closed-loop paths
+        run: ./deploy/e2e/run_e2e_ha.sh
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          docker compose \
+            -f deploy/e2e/docker-compose.yaml \
+            -f deploy/e2e/docker-compose.oidc.yaml \
+            -f deploy/e2e/docker-compose.real-cp.yaml \
+            -f deploy/e2e/docker-compose.ha.yaml \
+            logs --no-color | tail -n 500
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose \
+            -f deploy/e2e/docker-compose.yaml \
+            -f deploy/e2e/docker-compose.oidc.yaml \
+            -f deploy/e2e/docker-compose.real-cp.yaml \
+            -f deploy/e2e/docker-compose.ha.yaml \
+            down -v

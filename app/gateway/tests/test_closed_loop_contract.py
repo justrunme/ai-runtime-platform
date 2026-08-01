@@ -12,6 +12,7 @@ def test_closed_loop_routes_are_registered() -> None:
         "/v1/decisions/{request_id}",
         "/v1/runtime/status",
         "/v1/runtime/verify",
+        "/v1/runtime/jwks",
         "/mcp/tools/{tool_name}/call",
         "/mcp/servers",
         "/livez",

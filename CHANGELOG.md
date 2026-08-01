@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0
+
+Full closed-loop integration surface.
+
+- Signed `verification_token` on `POST /v1/runtime/verify` + public `GET /v1/runtime/jwks`
+- Verify response includes `observed` / `correlation` (generation + digests) and remediation IDs
+- Nightly HA e2e: Postgres-backed dual Control Plane, dual Runtime, Redis, OIDC
+- HA proofs: cross-CP approval redemption, tenant isolation across replicas, SIGTERM during stream
+
 ## 2.1.0
 
 Reliable usage evidence delivery.

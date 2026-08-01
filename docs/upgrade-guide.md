@@ -1,5 +1,12 @@
 # Upgrade guide
 
+## To v2.2.0
+
+1. Optional: configure `RUNTIME_VERIFY_PRIVATE_KEY_B64` (or PEM/file) so Control Plane can trust verify responses.
+2. Set `GATEWAY_REQUIRE_SIGNED_VERIFY=true` in production closed-loop profiles.
+3. Bump `GATEWAY_CONFIG_GENERATION` on each GitOps remediation for correlation.
+4. See [closed-loop contract](closed-loop-contract.md).
+
 ## To v2.1.0
 
 1. Optional webhook delivery now retries; tune `USAGE_EVENTS_MAX_ATTEMPTS` / buffer size.

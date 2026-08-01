@@ -157,13 +157,28 @@ class RuntimeConfigState:
             },
         }
 
+    def observed_snapshot(self) -> dict[str, Any]:
+        return {
+            "config_digest": self.active.digest,
+            "generation": self.active.generation,
+            "policy_digest": self.policy.last_seen_digest,
+            "policy_bundle_id": self.policy.last_seen_bundle_id,
+            "routes_digest": self.active.routes_digest,
+            "models": list(self.active.models),
+            "runtime_version": runtime_version(),
+            "instance_id": self.instance_id,
+            "profile": self.active.profile,
+            "status": self.active.status,
+        }
+
     def verify(self, expected: dict[str, Any]) -> dict[str, Any]:
         differences: list[dict[str, Any]] = []
+        observed = self.observed_snapshot()
         checks = [
-            ("config_digest", expected.get("config_digest"), self.active.digest),
-            ("generation", expected.get("generation"), self.active.generation),
-            ("policy_digest", expected.get("policy_digest"), self.policy.last_seen_digest),
-            ("routes_digest", expected.get("routes_digest"), self.active.routes_digest),
+            ("config_digest", expected.get("config_digest"), observed["config_digest"]),
+            ("generation", expected.get("generation"), observed["generation"]),
+            ("policy_digest", expected.get("policy_digest"), observed["policy_digest"]),
+            ("routes_digest", expected.get("routes_digest"), observed["routes_digest"]),
         ]
         for field_name, want, actual in checks:
             if want is None or want == "":
@@ -172,7 +187,21 @@ class RuntimeConfigState:
                 differences.append({"field": field_name, "expected": want, "actual": actual})
         models = expected.get("models")
         if isinstance(models, list):
-            actual_models = list(self.active.models)
+            actual_models = list(observed["models"])
             if sorted(str(m) for m in models) != actual_models:
                 differences.append({"field": "models", "expected": models, "actual": actual_models})
-        return {"verified": not differences, "differences": differences}
+        return {
+            "verified": not differences,
+            "differences": differences,
+            "observed": observed,
+            "expected": expected,
+            "correlation": {
+                "config_generation": observed["generation"],
+                "config_digest": observed["config_digest"],
+                "policy_bundle_id": observed["policy_bundle_id"],
+                "policy_digest": observed["policy_digest"],
+                "routes_digest": observed["routes_digest"],
+                "instance_id": observed["instance_id"],
+                "runtime_version": observed["runtime_version"],
+            },
+        }
