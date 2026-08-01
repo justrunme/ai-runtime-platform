@@ -37,7 +37,7 @@ from app.gateway.evaluations import (
 from app.gateway.governance import GovernanceConfig, enforce_governance
 from app.gateway.intent import resolve_intent
 from app.gateway.mcp import enforce_tool_governance, governed_tool_response
-from app.gateway.readiness import build_readiness_report
+from app.gateway.routers.health import router as health_router
 from app.gateway.streaming import observe_upstream_stream, stream_headers
 from app.gateway.tenant import TenantAttributionBackend, create_tenant_store
 
@@ -819,7 +819,7 @@ def request_is_authorized(request: Request, api_keys: frozenset[str]) -> bool:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version="0.5.0", lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 
 
@@ -837,23 +837,7 @@ async def enforce_api_key(request: Request, call_next):
     return await call_next(request)
 
 
-@app.get("/livez")
-async def livez() -> dict[str, str]:
-    """Process is alive; used for liveness probes."""
-    return {"status": "ok"}
-
-
-@app.get("/healthz")
-async def healthz() -> dict[str, str]:
-    """Backward-compatible alias for /livez."""
-    return await livez()
-
-
-@app.get("/readyz")
-async def readyz(request: Request) -> JSONResponse:
-    """Readiness: config, shared state, optional control plane, usable routes."""
-    ready, report = await build_readiness_report(request.app)
-    return JSONResponse(status_code=200 if ready else 503, content=report)
+app.include_router(health_router)
 
 
 @app.get("/metrics")
@@ -1218,16 +1202,29 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             health_rerouted=health_rerouted,
             fallback_used=fallback_used,
         )
-        response["selected_backend"] = model
-        response["fallback_used"] = fallback_used or health_rerouted or cost_rerouted
-        response["routing_reason"] = reason
+        fallback_flag = fallback_used or health_rerouted or cost_rerouted
         health_score, _, _ = await request.app.state.backend_health.routing_signal(model)
-        response["health_score"] = health_score
         estimated_cost = request_cost(response.get("usage"), settings.model_targets[model])
+        headers["x-selected-backend"] = model
+        headers["x-routing-reason"] = reason
+        headers["x-fallback-used"] = "true" if fallback_flag else "false"
+        headers["x-ai-health-score"] = str(health_score)
         if estimated_cost is not None:
-            response["estimated_cost"] = estimated_cost
-            response["runtime_cost"] = {"currency": "USD", "estimated": estimated_cost}
+            headers["x-ai-estimated-cost-usd"] = str(estimated_cost)
             span.set_attribute("gen_ai.usage.cost_usd", estimated_cost)
+        # Optional legacy body embedding for older demos/clients.
+        if os.getenv("GATEWAY_EMBED_ROUTING_METADATA", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            response["selected_backend"] = model
+            response["fallback_used"] = fallback_flag
+            response["routing_reason"] = reason
+            response["health_score"] = health_score
+            if estimated_cost is not None:
+                response["estimated_cost"] = estimated_cost
+                response["runtime_cost"] = {"currency": "USD", "estimated": estimated_cost}
         span.set_attribute("ai.runtime.routing_reason", reason)
         span.set_attribute("ai.runtime.selected_backend", model)
         span.set_attribute(
@@ -1238,7 +1235,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             selected_backend=model,
             reason=reason,
             success=True,
-            fallback_used=response["fallback_used"],
+            fallback_used=fallback_flag,
             duration_s=time.monotonic() - started_at,
             cost=estimated_cost,
         )
@@ -1253,7 +1250,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
                 shadow_target,
                 settings.timeout_seconds,
             )
-            response["shadow_backend"] = shadow_model
+            headers["x-shadow-backend"] = shadow_model
             span.set_attribute("ai.runtime.shadow_backend", shadow_model)
         await record_decision(
             request.app.state.decision_store,
@@ -1261,7 +1258,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             requested_model=requested_model,
             selected_backend=model,
             routing_reason=reason,
-            fallback_used=response["fallback_used"],
+            fallback_used=fallback_flag,
             health_score=health_score,
             duration_ms=round((time.monotonic() - started_at) * 1000, 2),
             shadow_backend=shadow_model,

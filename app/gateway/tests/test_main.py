@@ -448,12 +448,14 @@ async def test_cost_aware_completion_routes_to_cheaper_backend() -> None:
     app.state.governance = None
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
-        body = (
-            await client.post("/v1/chat/completions", json={"model": "small-chat", "messages": []})
-        ).json()
-    assert body["selected_backend"] == "llama"
-    assert body["routing_reason"] == "cost_aware"
-    assert body["fallback_used"] is True
+        response = await client.post(
+            "/v1/chat/completions", json={"model": "small-chat", "messages": []}
+        )
+    body = response.json()
+    assert "selected_backend" not in body
+    assert response.headers["x-selected-backend"] == "llama"
+    assert response.headers["x-routing-reason"] == "cost_aware"
+    assert response.headers["x-fallback-used"] == "true"
     await upstream.aclose()
 
 
