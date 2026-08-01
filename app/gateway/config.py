@@ -110,6 +110,9 @@ class GatewaySettings(BaseModel):
     require_shared_state: bool = False
     profile: str = "local"
     jwt_verify_enabled: bool = False
+    jwt_issuer: str | None = None
+    jwt_audience: str | None = None
+    require_jwt_iss_aud: bool = False
     control_plane_configured: bool = False
     require_auth: bool = False
     require_control_plane: bool = False
@@ -150,6 +153,12 @@ class GatewaySettings(BaseModel):
                 raise ValueError(
                     "production profile requires OIDC_JWT_VERIFY=true and a configured JWKS URL"
                 )
+            if not self.jwt_issuer or not self.jwt_audience:
+                raise ValueError(
+                    "production profile requires OIDC_JWT_ISSUER and OIDC_JWT_AUDIENCE"
+                )
+            if not self.require_jwt_iss_aud:
+                raise ValueError("production profile requires OIDC_JWT_REQUIRE_ISS_AUD=true")
             if not self.require_shared_state or not self.redis_url:
                 raise ValueError("production profile requires REDIS_URL shared state")
             if not self.control_plane_configured:
@@ -196,6 +205,11 @@ class GatewaySettings(BaseModel):
         gateway_replicas = max(1, int(os.getenv("GATEWAY_REPLICAS", "1")))
         profile = os.getenv("GATEWAY_PROFILE", "local").strip().lower() or "local"
         jwt_verify_enabled = is_jwt_verify_enabled()
+        jwt_issuer = os.getenv("OIDC_JWT_ISSUER", "").strip() or None
+        jwt_audience = os.getenv("OIDC_JWT_AUDIENCE", "").strip() or None
+        require_jwt_iss_aud = profile == "production" or os.getenv(
+            "OIDC_JWT_REQUIRE_ISS_AUD", ""
+        ).strip().lower() in {"1", "true", "yes"}
         control_plane_configured = bool(os.getenv("CONTROL_PLANE_URL", "").strip())
         require_shared_state = (
             os.getenv("REQUIRE_SHARED_STATE", "").strip().lower()
@@ -227,6 +241,9 @@ class GatewaySettings(BaseModel):
                 "require_shared_state": require_shared_state,
                 "profile": profile,
                 "jwt_verify_enabled": jwt_verify_enabled,
+                "jwt_issuer": jwt_issuer,
+                "jwt_audience": jwt_audience,
+                "require_jwt_iss_aud": require_jwt_iss_aud,
                 "control_plane_configured": control_plane_configured,
                 "require_auth": require_auth,
                 "require_control_plane": require_control_plane,

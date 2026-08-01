@@ -1,0 +1,19 @@
+# Hardened egress for clusters that pre-stage model weights on PVC/cache.
+# Does not allow arbitrary internet access — only DNS + HTTPS.
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ai-runtime
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443

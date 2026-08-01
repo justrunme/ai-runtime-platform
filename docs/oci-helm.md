@@ -9,10 +9,19 @@ helm package charts/vllm-runtime
 helm lint charts/vllm-runtime
 ```
 
-## Intended OCI publish (release pipeline)
+## OCI publish (release pipeline)
+
+The release workflow packages and pushes:
+
+```text
+oci://ghcr.io/justrunme/charts/vllm-runtime:<semver>
+```
+
+Manual:
 
 ```bash
-helm push vllm-runtime-<version>.tgz oci://ghcr.io/justrunme/charts
+helm package charts/vllm-runtime --version 1.3.0 --app-version 1.3.0
+helm push vllm-runtime-1.3.0.tgz oci://ghcr.io/justrunme/charts
 ```
 
 Gateway image remains:

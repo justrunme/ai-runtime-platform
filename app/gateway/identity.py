@@ -120,7 +120,15 @@ def extract_bearer_claims(authorization: str) -> dict[str, Any]:
 
 
 def resolve_workload_identity(request: Request, defaults: dict[str, str]) -> WorkloadIdentity:
-    claims = extract_bearer_claims(request.headers.get("authorization", ""))
+    # Prefer claims already verified by AuthenticationMiddleware to avoid a second JWKS hit.
+    state = getattr(request, "state", None)
+    cached = getattr(state, "identity_claims", None) if state is not None else None
+    if isinstance(cached, dict):
+        claims = cached
+    else:
+        claims = extract_bearer_claims(request.headers.get("authorization", ""))
+        if state is not None:
+            state.identity_claims = claims
     trusted_proxy = is_trusted_proxy_enabled()
     allow_headers = trusted_proxy and not is_jwt_verify_enabled()
 

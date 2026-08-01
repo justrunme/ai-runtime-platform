@@ -6,8 +6,9 @@
 | Control Plane v1 evaluate/approval | Supported | `x-ai-approval-id` redemption |
 | JWT/JWKS identity | Supported | Fail-closed when enabled |
 | Redis shared state (HA) | Supported | Required for replicas > 1; in-cluster demo Redis is reference-only |
-| Production profile fail-closed | Supported | OIDC/JWKS + Control Plane + Redis Secrets |
-| Platform combined e2e | Supported | `deploy/e2e` + CI |
+| Production profile fail-closed | Supported | OIDC/JWKS + iss/aud + Control Plane + Redis Secrets |
+| API auth middleware | Supported | All non-public routes; claims on `request.state` |
+| Platform combined e2e | Supported | mock CP (PR) + OIDC + real CP (nightly/tag) |
 | OpenAI error envelope | Supported | Top-level `{error}` contract tests |
 | `/livez` `/readyz` | Supported | Production probes |
 | Observed streaming lifecycle | Supported | TTFT + terminal outcomes |

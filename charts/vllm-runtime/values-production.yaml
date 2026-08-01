@@ -1,4 +1,6 @@
 # Production profile for GPU inference.
+# Note: default NetworkPolicy egress remains permissive for Hugging Face pulls.
+# Layer values-networkpolicy-hardened.yaml when weights are pre-staged on PVC.
 replicaCount: 1
 strategy:
   type: Recreate
@@ -18,3 +20,6 @@ model:
 startupProbe:
   failureThreshold: 120
   periodSeconds: 10
+serviceAccount:
+  automountServiceAccountToken: false
+

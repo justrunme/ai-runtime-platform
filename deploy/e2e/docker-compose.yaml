@@ -1,8 +1,12 @@
-# Combined platform e2e: Control Plane stub + Redis + two Runtime gateways + mock OpenAI.
+# Combined platform e2e: mock Control Plane + Redis + two Runtime gateways + mock OpenAI.
 #
 #   docker compose -f deploy/e2e/docker-compose.yaml up --build -d
 #   ./deploy/e2e/run_e2e.sh
 #   docker compose -f deploy/e2e/docker-compose.yaml down -v
+#
+# OIDC/production profile:
+#   docker compose -f deploy/e2e/docker-compose.yaml -f deploy/e2e/docker-compose.oidc.yaml up --build -d
+#   ./deploy/e2e/run_e2e_oidc.sh
 services:
   redis:
     image: redis:7.4-alpine
@@ -19,8 +23,10 @@ services:
     volumes:
       - ./mocks:/app/mocks:ro
     command: >
-      bash -lc "pip install --quiet fastapi uvicorn &&
+      bash -lc "pip install --quiet fastapi 'uvicorn[standard]' &&
       uvicorn mocks.mock_openai:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "18082:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 5s
@@ -33,7 +39,7 @@ services:
     volumes:
       - ./mocks:/app/mocks:ro
     command: >
-      bash -lc "pip install --quiet fastapi uvicorn &&
+      bash -lc "pip install --quiet fastapi 'uvicorn[standard]' &&
       uvicorn mocks.mock_control_plane:app --host 0.0.0.0 --port 8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz')"]
@@ -53,7 +59,7 @@ services:
       CONTROL_PLANE_URL: http://mock-control-plane:8080
       GOVERNANCE_ENFORCEMENT: "true"
       GOVERNANCE_FAIL_OPEN: "false"
-      MODEL_TARGETS: '{"qwen":{"url":"http://mock-openai:8000/v1","input_cost_per_million":0,"output_cost_per_million":0,"health_path":"/health"}}'
+      MODEL_TARGETS: '{"llama3.1:8b":{"url":"http://mock-openai:8000/v1","input_cost_per_million":0,"output_cost_per_million":0,"health_path":"/health","provider":"ollama"}}'
       OTEL_SDK_DISABLED: "true"
     depends_on:
       redis:

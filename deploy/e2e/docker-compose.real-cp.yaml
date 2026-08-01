@@ -1,0 +1,42 @@
+# Release/nightly proof against published Control Plane image.
+# Keeps mock OpenAI + Redis + (optional) mock OIDC from the base/oidc files.
+services:
+  control-plane:
+    image: ${CONTROL_PLANE_IMAGE:-ghcr.io/justrunme/ai-infra-control-plane:1.3.0}
+    environment:
+      DATABASE_URL: sqlite:////var/lib/ai-control-plane/control-plane.db
+      OTEL_SDK_DISABLED: "true"
+    volumes:
+      - control-plane-data:/var/lib/ai-control-plane
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "18084:8080"
+
+  gateway-a:
+    environment:
+      CONTROL_PLANE_URL: http://control-plane:8080
+      GOVERNANCE_DEFAULT_ENVIRONMENT: production
+      GOVERNANCE_DEFAULT_COST_PER_HOUR_USD: "0.18"
+      GOVERNANCE_DEFAULT_MONTH_TO_DATE_COST_USD: "100"
+      GOVERNANCE_DEFAULT_FORECAST_MONTHLY_COST_USD: "300"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+
+  gateway-b:
+    environment:
+      CONTROL_PLANE_URL: http://control-plane:8080
+      GOVERNANCE_DEFAULT_ENVIRONMENT: production
+      GOVERNANCE_DEFAULT_COST_PER_HOUR_USD: "0.18"
+      GOVERNANCE_DEFAULT_MONTH_TO_DATE_COST_USD: "100"
+      GOVERNANCE_DEFAULT_FORECAST_MONTHLY_COST_USD: "300"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+
+volumes:
+  control-plane-data:

@@ -1,26 +1,28 @@
-# Redis HA reference (external / Sentinel example)
+# Redis for production Runtime
 
-Production Runtime gateways must consume Redis through Secret `ai-runtime-redis` /
-`REDIS_URL` (preferably `rediss://` with ACL credentials). This overlay is a
-**reference** for operators evaluating Sentinel topology — not a turnkey managed service.
+This overlay **does not** ship a Redis operator or a working Sentinel topology.
+Own-the-Redis HA is out of scope for the Execution Plane.
 
 ## Contract
 
+Production gateways consume Redis only through Secret `ai-runtime-redis` /
+`REDIS_URL` (prefer `rediss://` with ACL credentials).
+
 | Concern | Expectation |
 | --- | --- |
-| Topology | Managed Redis, Sentinel, or Cluster |
-| Auth | Password / ACL required |
+| Topology | Managed Redis / MemoryDB / ElastiCache / Memorystore / Azure Cache |
+| Auth | Password or ACL required |
 | Transport | TLS (`rediss://`) in production |
 | Durability | Operator-defined RPO; gateway keys are TTL operational state, not audit |
-| Gateway | `REDIS_URL` via `secretKeyRef` (see `deploy/overlays/production`) |
+| Client | Standard Redis URL (not Sentinel-aware multi-endpoint discovery) |
 
-## Apply (reference only)
+## Demo vs production
 
-```bash
-# Review and replace placeholders, then:
-kubectl apply -k deploy/overlays/redis-ha
-# Point ai-runtime-redis Secret url at the Sentinel-aware endpoint.
-```
+| Overlay | Purpose |
+| --- | --- |
+| `deploy/overlays/demo-redis` | Single-replica, no auth/TLS — local/demo only |
+| `deploy/overlays/production` | Expects external Redis Secret |
 
-Prefer a cloud managed Redis (AWS MemoryDB / ElastiCache, GCP Memorystore, Azure Cache)
-when you need backup/restore and multi-AZ without operating Sentinel yourself.
+## Example Secret
+
+See `deploy/overlays/production/secrets.example.yaml`.
