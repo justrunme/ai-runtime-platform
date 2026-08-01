@@ -13,16 +13,16 @@
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
-> **Execution Plane** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — reference OpenAI-compatible runtime, MCP gateway, and intent proxy for governed private AI on Kubernetes.
+> **Execution Plane** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — OpenAI-compatible runtime, governed inference boundary, and intent proxy for private AI on Kubernetes.
 
-This repository is the **Execution Plane**: routing, shadow traffic, cost attribution, MCP tool governance, intent resolution proxying, workload identity forwarding, and optional enforcement of [Control Plane](https://github.com/justrunme/ai-infra-control-plane) governance verdicts. See [runtime enforcement mode](docs/runtime-enforcement-mode.md) and the [platform roadmap](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md).
+This repository is the **Execution Plane**: routing, shadow traffic, cost attribution, Control Plane v1 approval/enforcement, MCP governance reference endpoint, intent proxying, and workload identity. See [runtime enforcement mode](docs/runtime-enforcement-mode.md) and the [platform roadmap](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md).
 
 ## Platform Signals
 
 | Runtime path | Production controls | Operational evidence |
 | --- | --- | --- |
 | OpenAI-compatible FastAPI gateway | Health-aware, fallback, canary, cost-aware routing, and governance enforcement | Animated routing demos and local response captures |
-| MCP and intent gateway | Governed tool calls and `/v1/intent/resolve` proxying through the Control Plane | Platform demo verifies allowed and blocked tool calls plus intent planning |
+| MCP governance reference + intent proxy | Governed tool evaluate stub and `/v1/intent/resolve` through the Control Plane | Platform demo verifies allowed/blocked tool calls plus intent planning |
 | vLLM and KServe serving examples | GPU scheduling, probes, ServiceMonitor, KEDA queue scaling | Helm, Kustomize, kubeconform, and Docker CI gates |
 | OpenTelemetry and Prometheus metrics | Request IDs, traces, routing labels, tenant attribution, fallback and cost metrics | Grafana dashboard, OTLP collector, signed release image |
 

@@ -1,8 +1,13 @@
-"""Pytest hooks shared by gateway tests."""
+"""Shared fixtures for gateway tests."""
 
 from __future__ import annotations
 
-import os
+import pytest
 
-# Prevent BatchSpanProcessor from flushing to a closed stdout after pytest exits.
-os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+
+@pytest.fixture(autouse=True)
+def _demo_trusted_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default local/demo identity mode for existing suite; strict JWT tests override."""
+    monkeypatch.setenv("IDENTITY_TRUSTED_PROXY", "true")
+    monkeypatch.delenv("OIDC_JWT_VERIFY", raising=False)
+    monkeypatch.delenv("OIDC_JWKS_URL", raising=False)
