@@ -11,6 +11,13 @@ permissions:
 
 jobs:
   real-control-plane:
+    strategy:
+      fail-fast: false
+      matrix:
+        control_plane:
+          - "2.0.0"
+          - "1.3.0"
+          - "main" # nightly tip; may fail if CP tip drifts — keep fail-fast false
     uses: ./.github/workflows/platform-e2e-real-cp-reusable.yaml
     with:
-      control_plane_image: ghcr.io/justrunme/ai-infra-control-plane:1.3.0
+      control_plane_image: ghcr.io/justrunme/ai-infra-control-plane:${{ matrix.control_plane }}

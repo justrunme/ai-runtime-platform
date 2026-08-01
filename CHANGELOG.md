@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.1
+
+Correctness and contract honesty.
+
+- Fix admission inflight leak on cancellation while waiting for a permit
+- Cache decision-token JWKS client; compare signed `request_digest` to local canonical digest
+- MCP execution requires Control Plane unless `MCP_ALLOW_UNGOVERNED=true`
+- RBAC for `/v1/runtime/status`, `/v1/runtime/verify`, `/mcp/servers` when JWT verify / explicit flag is on
+- Release gates against Control Plane `2.0.0` and `1.3.0`; cosign-sign OCI Helm chart
+- Docs: maturity/README/tenant limits honesty (`PerReplica`, reserved credential ref)
+
 ## 2.0.0
 
 Stable closed-loop Execution Plane contract.

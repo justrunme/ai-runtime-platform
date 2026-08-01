@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from app.gateway.rbac import STATUS_ROLES, VERIFY_ROLES, require_any_role
+
 router = APIRouter(tags=["runtime"])
 
 
@@ -24,6 +26,7 @@ async def _backend_counts(request: Request) -> tuple[int, int, int]:
 
 @router.get("/v1/runtime/status")
 async def runtime_status(request: Request) -> dict[str, Any]:
+    require_any_role(request, STATUS_ROLES)
     state = request.app.state.runtime_config
     healthy, unhealthy, unknown = await _backend_counts(request)
     return state.status_payload(
@@ -35,5 +38,6 @@ async def runtime_status(request: Request) -> dict[str, Any]:
 
 @router.post("/v1/runtime/verify")
 async def runtime_verify(request: Request, body: RuntimeVerifyRequest) -> dict[str, Any]:
+    require_any_role(request, VERIFY_ROLES)
     state = request.app.state.runtime_config
     return state.verify(body.expected)

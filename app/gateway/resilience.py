@@ -84,12 +84,15 @@ class GlobalAdmissionController:
                     },
                 )
             self._queued += 1
+        acquired = False
         try:
             await self._sem.acquire()
+            acquired = True
         finally:
             async with self._lock:
                 self._queued = max(0, self._queued - 1)
-                self._inflight += 1
+                if acquired:
+                    self._inflight += 1
 
     async def release(self) -> None:
         assert self._sem is not None

@@ -6,14 +6,32 @@ import json
 import os
 from functools import lru_cache
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class TenantRuntimePolicy(BaseModel):
     allowed_models: list[str] = Field(default_factory=list, alias="allowedModels")
     allowed_routes: list[str] = Field(default_factory=list, alias="allowedRoutes")
-    max_concurrent_requests: int = Field(default=50, ge=1, alias="maxConcurrentRequests")
-    max_queued_requests: int = Field(default=100, ge=0, alias="maxQueuedRequests")
+    # Per-replica limit (not fleet-wide). Alias keeps the shorter historical name.
+    max_concurrent_requests: int = Field(
+        default=50,
+        ge=1,
+        validation_alias=AliasChoices(
+            "maxConcurrentRequestsPerReplica",
+            "maxConcurrentRequests",
+        ),
+        serialization_alias="maxConcurrentRequestsPerReplica",
+    )
+    max_queued_requests: int = Field(
+        default=100,
+        ge=0,
+        validation_alias=AliasChoices(
+            "maxQueuedRequestsPerReplica",
+            "maxQueuedRequests",
+        ),
+        serialization_alias="maxQueuedRequestsPerReplica",
+    )
+    # Reserved: not applied to upstream Authorization yet (v2.1+).
     upstream_credential_ref: str | None = Field(default=None, alias="upstreamCredentialRef")
 
     model_config = {"populate_by_name": True}

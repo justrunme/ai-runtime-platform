@@ -42,6 +42,11 @@ When Control Plane returns `decision_token` (JWS), Runtime verifies:
 
 Set `GATEWAY_REQUIRE_SIGNED_DECISION=true` to reject evaluate responses that omit the token.
 
+When a token is present, Runtime also computes the local canonical request digest
+(same binding fields as Control Plane approval binding, excluding live telemetry)
+and rejects mismatches with `signed_decision_request_mismatch`. This blocks replay
+of a coherent old token+evaluate pair against a different client request.
+
 ## Correlation chain
 
 ```text

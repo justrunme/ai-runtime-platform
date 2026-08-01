@@ -28,9 +28,8 @@ TENANT_RUNTIME_POLICY='{
     "finance": {
       "allowedModels": ["qwen"],
       "allowedRoutes": ["finance-chat"],
-      "maxConcurrentRequests": 20,
-      "maxQueuedRequests": 100,
-      "upstreamCredentialRef": "vault://runtime/finance"
+      "maxConcurrentRequestsPerReplica": 20,
+      "maxQueuedRequestsPerReplica": 100
     }
   },
   "auditorGroups": ["ai-auditors"]
@@ -38,6 +37,12 @@ TENANT_RUNTIME_POLICY='{
 ```
 
 Empty allowlists mean unrestricted (default demo posture).
+
+Limits are **per gateway replica** (process-local). Two replicas with
+`maxConcurrentRequestsPerReplica: 20` can admit up to 40 concurrent requests
+fleet-wide until a Redis-backed semaphore exists.
+
+`upstreamCredentialRef` is reserved and not applied to upstream Authorization yet.
 
 ## Admission errors
 

@@ -62,12 +62,15 @@ class TenantAdmissionController:
                     },
                 )
             self._queued[tenant_id] = queued + 1
+        acquired = False
         try:
             await sem.acquire()
+            acquired = True
         finally:
             async with self._lock:
                 self._queued[tenant_id] = max(0, self._queued.get(tenant_id, 1) - 1)
-                self._inflight[tenant_id] = self._inflight.get(tenant_id, 0) + 1
+                if acquired:
+                    self._inflight[tenant_id] = self._inflight.get(tenant_id, 0) + 1
         return AdmissionLease(controller=self, tenant_id=tenant_id)
 
     async def _release(self, tenant_id: str) -> None:

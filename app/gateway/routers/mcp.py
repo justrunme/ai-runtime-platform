@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import suppress
 from typing import Any
 
@@ -12,8 +13,13 @@ from app.gateway.governance import GovernanceConfig
 from app.gateway.intent import resolve_intent
 from app.gateway.mcp import enforce_tool_governance, governed_tool_response
 from app.gateway.mcp_transport import execute_mcp_tool, load_mcp_registry
+from app.gateway.rbac import MCP_SERVERS_ROLES, require_any_role
 
 router = APIRouter(tags=["mcp"])
+
+
+def _allow_ungoverned_mcp() -> bool:
+    return os.getenv("MCP_ALLOW_UNGOVERNED", "").strip().lower() in {"1", "true", "yes"}
 
 
 @router.get("/mcp/tools")
@@ -33,7 +39,8 @@ async def mcp_tools(request: Request) -> JSONResponse:
 
 
 @router.get("/mcp/servers")
-async def mcp_servers() -> dict[str, Any]:
+async def mcp_servers(request: Request) -> dict[str, Any]:
+    require_any_role(request, MCP_SERVERS_ROLES)
     registry = load_mcp_registry()
     return {
         "servers": {
@@ -74,6 +81,21 @@ async def mcp_tool_call(tool_name: str, request: Request) -> JSONResponse:
         raise HTTPException(status_code=422, detail={"error": "request body must be an object"})
     governance: GovernanceConfig | None = request.app.state.governance
     governance_result = None
+    server_name = str(payload.get("mcp_server") or payload.get("server") or "").strip()
+    if server_name and governance is None and not _allow_ungoverned_mcp():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": {
+                    "type": "api_error",
+                    "code": "mcp_governance_required",
+                    "message": (
+                        "MCP execution requires CONTROL_PLANE_URL; "
+                        "set MCP_ALLOW_UNGOVERNED=true only for local demos"
+                    ),
+                }
+            },
+        )
     if governance is not None:
         governance_result = await enforce_tool_governance(
             request.app.state.client,
@@ -83,7 +105,6 @@ async def mcp_tool_call(tool_name: str, request: Request) -> JSONResponse:
             payload,
         )
 
-    server_name = str(payload.get("mcp_server") or payload.get("server") or "").strip()
     execution = None
     if server_name:
         arguments = payload.get("arguments")

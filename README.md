@@ -15,6 +15,16 @@
 
 > **Execution Plane v2.0** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
 
+```text
+OIDC Client
+  → Runtime admission (global + tenant)
+  → Control Plane signed decision (+ local request-digest bind)
+  → Model / MCP execution
+  → Enforcement evidence headers
+  → Usage event
+  → Runtime verification (/v1/runtime/verify)
+```
+
 This repository is the **Execution Plane**: routing, shared-state HA, observed streaming, Control Plane enforcement evidence, runtime verify, tenant isolation, MCP transport, and usage events. See [closed-loop contract](docs/closed-loop-contract.md), [auth boundary](docs/auth-boundary.md), [compatibility matrix](docs/compatibility-matrix.md), [platform e2e](deploy/e2e/README.md), and [upgrade guide](docs/upgrade-guide.md).
 
 ## Platform Signals
@@ -22,7 +32,7 @@ This repository is the **Execution Plane**: routing, shared-state HA, observed s
 | Runtime path | Production controls | Operational evidence |
 | --- | --- | --- |
 | OpenAI-compatible FastAPI gateway | Health-aware, fallback, canary, cost-aware routing, and governance enforcement | Animated routing demos and local response captures |
-| MCP governance reference + intent proxy | Governed tool evaluate stub and `/v1/intent/resolve` through the Control Plane | Platform demo verifies allowed/blocked tool calls plus intent planning |
+| MCP + intent | Governed evaluate-tool then optional Streamable HTTP `tools/call`; `/v1/intent/resolve` | Requires Control Plane unless `MCP_ALLOW_UNGOVERNED` for demos |
 | vLLM and KServe serving examples | GPU scheduling, probes, ServiceMonitor, KEDA queue scaling | Helm, Kustomize, kubeconform, and Docker CI gates |
 | OpenTelemetry and Prometheus metrics | Request IDs, traces, routing labels, tenant attribution, fallback and cost metrics | Grafana dashboard, OTLP collector, signed release image |
 
@@ -137,7 +147,7 @@ The first launch downloads `qwen2.5:1.5b` (Ollama `0.32.5`), then serves it thro
 
 - OpenAI-compatible `POST /v1/chat/completions` gateway with explicit model-to-backend routing.
 - Optional governance enforcement adapter: calls control plane `/governance/evaluate` before upstream execution when `CONTROL_PLANE_URL` is configured.
-- Governed MCP endpoint: `POST /mcp/tools/{tool}/call` calls control plane `/governance/evaluate-tool` before returning a governed stub response.
+- Governed MCP endpoint: `POST /mcp/tools/{tool}/call` calls `/governance/evaluate-tool`, then executes registered Streamable HTTP servers when `mcp_server` is set (see [MCP execution](docs/mcp-execution.md)).
 - Intent proxy endpoint: `POST /v1/intent/resolve` forwards natural-language intent requests to control plane `/intent/resolve`.
 - SLO-based canary promotion simulator in `experiments/canary-analysis/` for promote/hold/rollback recommendations from shadow metrics.
 - Workload identity and tenant attribution with header/JWT resolution, optional Redis-backed shared state, and `gateway_tenant_*` Prometheus metrics.
@@ -217,7 +227,7 @@ curl http://localhost:8080/v1/chat/completions \
   -d '{"model":"qwen2.5:1.5b","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-In the Kubernetes path the value is read from the optional `ai-runtime-gateway-auth` Secret (`api-keys` field). This is a single shared-key layer; per-tenant keys, quotas, and JWT/OIDC remain a mesh/gateway concern on the roadmap.
+In the Kubernetes path the value is read from the optional `ai-runtime-gateway-auth` Secret (`api-keys` field). Production profiles use OIDC/JWKS (`OIDC_JWT_VERIFY`) with issuer/audience checks; see [auth boundary](docs/auth-boundary.md).
 
 ## Metrics
 
@@ -407,7 +417,7 @@ docs/                 Architecture and operational decisions
 
 ## Roadmap
 
-1. Extend the shared-key auth into Envoy AI Gateway policies, per-tenant API keys, rate limits, and JWT/OIDC authentication.
+1. Extend Envoy AI Gateway policies and fleet-wide Redis tenant semaphores on top of the existing OIDC/JWT runtime boundary.
 2. Add Ray Serve LLM as a multi-model/pipeline deployment profile.
 3. Add SLO recording rules and alerts on the exported gateway and vLLM metrics for TTFT, TPOT, queue depth, and error budget (dashboards already ship in `deploy/observability`).
 4. Add canary analysis gates and rollback based on live latency/error signals.
