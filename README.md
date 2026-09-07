@@ -13,6 +13,11 @@
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
 
+[![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/ai-runtime-execution-plane/)
+
+Case study: [AI Runtime Platform](https://justrunme.com/cases/ai-runtime-execution-plane/) · [Andrey Lesnikov](https://justrunme.com/)
+Related on site: [Cloud-Native AI Gateway](https://justrunme.com/cases/cloud-native-ai-gateway/) · [LLM Infrastructure Runtime](https://justrunme.com/cases/llm-infrastructure-runtime/)
+
 > **Execution Plane v2.3** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
 
 Current release: **Runtime v2.3.0**.  
