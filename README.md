@@ -16,7 +16,19 @@
 [![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/ai-runtime-execution-plane/)
 
 Case study: [AI Runtime Platform](https://justrunme.com/cases/ai-runtime-execution-plane/) · [Andrey Lesnikov](https://justrunme.com/)
-Related on site: [Cloud-Native AI Gateway](https://justrunme.com/cases/cloud-native-ai-gateway/) · [LLM Infrastructure Runtime](https://justrunme.com/cases/llm-infrastructure-runtime/)
+
+## On justrunme.com
+
+This repository is the public evidence base for:
+
+| Case | URL |
+| --- | --- |
+| **AI Runtime Platform** (primary) | https://justrunme.com/cases/ai-runtime-execution-plane/ |
+| Cloud-Native AI Gateway | https://justrunme.com/cases/cloud-native-ai-gateway/ |
+| LLM Infrastructure Runtime | https://justrunme.com/cases/llm-infrastructure-runtime/ |
+
+Site: [justrunme.com](https://justrunme.com/) · Author: [Andrey Lesnikov](https://justrunme.com/about/)
+
 
 > **Execution Plane v2.3** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
 
