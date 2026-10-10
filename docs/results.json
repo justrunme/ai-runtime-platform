@@ -1,0 +1,17 @@
+{
+  "repo": "ai-runtime-platform",
+  "source_run": "https://github.com/justrunme/ai-runtime-platform/actions/runs/38060436977",
+  "source_job": "platform-e2e",
+  "measured_at": "2026-10-10T14:41:08Z",
+  "metrics": {
+    "golden_path_suite_seconds": 21.5,
+    "allow": "200",
+    "block": "403",
+    "approval_required": "409",
+    "approval_replay": "409",
+    "approval_body_mismatch": "409",
+    "redis_down_readyz": "503",
+    "control_plane_down": "503",
+    "ha_failover": "gateway-b"
+  }
+}
