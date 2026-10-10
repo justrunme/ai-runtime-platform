@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+## [2.4.0] - 2026-10-10
+
+Signed Control Plane compatibility matrix and CI hygiene.
+
+- Dependency updates (GitHub Actions, Docker base image, openai)
+- Remove failing nightly schedule from the real Control Plane e2e workflow
+- Signed compatibility matrix against Control Plane `main` / `2.4.0` / `2.0.0` / `1.3.0` with keyless cosign verification; results in `docs/compatibility.md`
+- Weekly schedule restored for the real Control Plane e2e
+
 ## 2.3.0
 
 MCP supported path for Streamable HTTP sessions.
@@ -179,3 +190,6 @@ Trust boundary and Control Plane approval contract.
 ## 0.1.x
 
 Initial Execution Plane gateway and demos.
+
+[Unreleased]: https://github.com/justrunme/ai-runtime-platform/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/justrunme/ai-runtime-platform/compare/v2.3.0...v2.4.0
