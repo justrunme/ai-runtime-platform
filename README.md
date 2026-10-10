@@ -1,21 +1,45 @@
 # AI Runtime Platform
 
-[![CI](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml)
-[![Release](https://github.com/justrunme/ai-runtime-platform/actions/workflows/release.yaml/badge.svg)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/release.yaml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-0B7285.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB.svg)](pyproject.toml)
-[![FastAPI](https://img.shields.io/badge/FastAPI-gateway-009688.svg)](app/gateway/main.py)
-[![OpenAI API](https://img.shields.io/badge/OpenAI--compatible-chat%20completions-111827.svg)](docs/runtime-decision-engine.md)
-[![vLLM](https://img.shields.io/badge/vLLM-GPU%20serving-5B5FC7.svg)](charts/vllm-runtime)
-[![KServe](https://img.shields.io/badge/KServe-InferenceService-326CE5.svg)](deploy/kserve/qwen-inferenceservice.yaml)
-[![KEDA](https://img.shields.io/badge/KEDA-queue%20autoscaling-1E88E5.svg)](deploy/keda/vllm-scaledobject.yaml)
-[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces%20%2B%20metrics-F5A800.svg)](deploy/observability/otel-collector.yaml)
-[![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
-[![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
+OpenAI-compatible execution plane on Kubernetes.
 
-[![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/ai-runtime-execution-plane/)
+[![CI](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml/badge.svg)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/justrunme/ai-runtime-platform?display_name=tag)](https://github.com/justrunme/ai-runtime-platform/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Case study: [AI Runtime Platform](https://justrunme.com/cases/ai-runtime-execution-plane/) · [Andrey Lesnikov](https://justrunme.com/)
+
+## What it does
+
+- Provides an OpenAI-compatible FastAPI gateway with health-, latency-, and cost-aware routing
+- Enforces Control Plane decisions on the request path and emits runtime verification evidence
+- Includes vLLM / KServe serving examples, KEDA scaling manifests, and OpenTelemetry wiring
+
+## Why
+
+- A gateway should decide *how* to execute (route, canary, fallback), not only proxy to one backend
+- Execution-plane concerns stay paired with the [AI Infrastructure Control Plane](https://github.com/justrunme/ai-infra-control-plane)
+
+## Quickstart
+
+```bash
+make validate
+```
+
+See [docs/demo-flow.md](docs/demo-flow.md) for the local demo path.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Client[OIDC client] --> GW[app/gateway FastAPI]
+  GW --> CP[Control Plane decide]
+  GW --> Route[route / canary / fallback]
+  Route --> vLLM[charts/vllm-runtime]
+  Route --> KS[deploy/kserve]
+  GW --> OTel[deploy/observability]
+  GitOps[gitops/argocd] --> GW
+  CI[.github/workflows/ci.yaml] --> Rel[release.yaml]
+```
 
 ## On justrunme.com
 
@@ -28,7 +52,6 @@ This repository is the public evidence base for:
 | LLM Infrastructure Runtime | https://justrunme.com/cases/llm-infrastructure-runtime/ |
 
 Site: [justrunme.com](https://justrunme.com/) · Author: [Andrey Lesnikov](https://justrunme.com/about/)
-
 
 > **Execution Plane v2.3** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
 
