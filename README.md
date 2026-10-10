@@ -15,6 +15,7 @@ OpenAI-compatible execution plane on Kubernetes.
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces%20%2B%20metrics-F5A800.svg)](deploy/observability/otel-collector.yaml)
 [![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
 [![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/ai-runtime-execution-plane/)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/justrunme/ai-runtime-platform/badge)](https://securityscorecards.dev/viewer/?uri=github.com/justrunme/ai-runtime-platform)
 
 Case study: [AI Runtime Platform](https://justrunme.com/cases/ai-runtime-execution-plane/) · [Andrey Lesnikov](https://justrunme.com/)
 
