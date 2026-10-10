@@ -2,9 +2,19 @@
 
 OpenAI-compatible execution plane on Kubernetes.
 
-[![CI](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml/badge.svg)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml)
-[![Release](https://img.shields.io/github/v/release/justrunme/ai-runtime-platform?display_name=tag)](https://github.com/justrunme/ai-runtime-platform/releases/latest)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/ci.yaml)
+[![Release](https://github.com/justrunme/ai-runtime-platform/actions/workflows/release.yaml/badge.svg)](https://github.com/justrunme/ai-runtime-platform/actions/workflows/release.yaml)
+[![Supply Chain](https://img.shields.io/badge/supply%20chain-SBOM%20%2B%20cosign%20%2B%20Trivy-2E7D32.svg)](.github/workflows/release.yaml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0B7285.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB.svg)](pyproject.toml)
+[![FastAPI](https://img.shields.io/badge/FastAPI-gateway-009688.svg)](app/gateway/main.py)
+[![OpenAI API](https://img.shields.io/badge/OpenAI--compatible-chat%20completions-111827.svg)](docs/runtime-decision-engine.md)
+[![vLLM](https://img.shields.io/badge/vLLM-GPU%20serving-5B5FC7.svg)](charts/vllm-runtime)
+[![KServe](https://img.shields.io/badge/KServe-InferenceService-326CE5.svg)](deploy/kserve/qwen-inferenceservice.yaml)
+[![KEDA](https://img.shields.io/badge/KEDA-queue%20autoscaling-1E88E5.svg)](deploy/keda/vllm-scaledobject.yaml)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces%20%2B%20metrics-F5A800.svg)](deploy/observability/otel-collector.yaml)
+[![GitOps](https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D.svg)](gitops/argocd/application.yaml)
+[![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/ai-runtime-execution-plane/)
 
 Case study: [AI Runtime Platform](https://justrunme.com/cases/ai-runtime-execution-plane/) · [Andrey Lesnikov](https://justrunme.com/)
 
