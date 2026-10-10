@@ -19,6 +19,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app import __version__
 from app.gateway.admission import TenantAdmissionController
 from app.gateway.auth import PUBLIC_PATHS, install_authentication, request_is_authorized
 from app.gateway.config import (
@@ -190,7 +191,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 configure_tracing()
-app = FastAPI(title="AI Runtime Gateway", version="2.3.0", lifespan=lifespan)
+app = FastAPI(title="AI Runtime Gateway", version=__version__, lifespan=lifespan)
 FastAPIInstrumentor.instrument_app(app)
 register_exception_handlers(app)
 install_authentication(app)
