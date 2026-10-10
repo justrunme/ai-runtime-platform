@@ -1,5 +1,8 @@
 # Control Plane ↔ Runtime compatibility
 
+CI-proven pass/fail for the current Runtime line is published in
+[compatibility.md](compatibility.md).
+
 Canonical closed-loop pair for operators and release gates:
 
 | Control Plane | Runtime | Status |

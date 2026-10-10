@@ -4,10 +4,15 @@ on:
   workflow_call:
     inputs:
       control_plane_image:
-        description: Published Control Plane image tag used for compatibility proof
+        description: Published Control Plane image tag or digest used for compatibility proof
         type: string
         required: false
-        default: ghcr.io/justrunme/ai-infra-control-plane:2.4.0
+        default: ghcr.io/justrunme/ai-infra-control-plane@sha256:608f7758bd29979c81db146b9d76b83b6a7b906446d31c15dddbabd8c0a13274
+      control_plane_ref:
+        description: Human-readable Control Plane version label (2.4.0, main, …)
+        type: string
+        required: false
+        default: "2.4.0"
 
 permissions:
   contents: read
@@ -19,9 +24,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Verify and pin Control Plane image
+        id: pin
+        env:
+          CONTROL_PLANE_REF: ${{ inputs.control_plane_ref }}
+          COMPAT_RESULT_FILE: ${{ runner.temp }}/compat-result.json
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify-control-plane-image.sh
+          scripts/verify-control-plane-image.sh "${{ inputs.control_plane_image }}"
       - name: Start real Control Plane stack
         env:
-          CONTROL_PLANE_IMAGE: ${{ inputs.control_plane_image }}
+          CONTROL_PLANE_IMAGE: ${{ env.CONTROL_PLANE_IMAGE }}
         run: |
           docker compose \
             -f deploy/e2e/docker-compose.yaml \
@@ -30,6 +46,36 @@ jobs:
             up --build -d
       - name: Run real Control Plane golden paths
         run: ./deploy/e2e/run_e2e_real_cp.sh
+      - name: Record e2e result
+        if: always()
+        env:
+          COMPAT_RESULT_FILE: ${{ runner.temp }}/compat-result.json
+          E2E_CONCLUSION: ${{ job.status }}
+          CONTROL_PLANE_REF: ${{ inputs.control_plane_ref }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          path = pathlib.Path(os.environ["COMPAT_RESULT_FILE"])
+          row = {}
+          if path.exists() and path.stat().st_size:
+              row = json.loads(path.read_text())
+          row.setdefault("control_plane", os.environ.get("CONTROL_PLANE_REF", "unknown"))
+          row.setdefault("runtime", "2.3.x")
+          row.setdefault("signature", "fail")
+          conclusion = os.environ.get("E2E_CONCLUSION", "failure")
+          if row.get("signature") != "pass":
+              row["e2e"] = "skipped"
+          else:
+              row["e2e"] = "pass" if conclusion == "success" else "fail"
+          path.write_text(json.dumps(row, indent=2) + "\n")
+          PY
+      - name: Upload compatibility cell
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compat-${{ inputs.control_plane_ref }}
+          path: ${{ runner.temp }}/compat-result.json
+          if-no-files-found: warn
       - name: Collect logs on failure
         if: failure()
         run: |

@@ -69,7 +69,7 @@ tenant isolation across replicas, and SIGTERM during stream.
 
 ## Compatibility
 
-See [compatibility matrix](compatibility-matrix.md).
+See [compatibility](compatibility.md) and [compatibility policy](compatibility-matrix.md).
 
 **Current stable pair:** Runtime `2.3.x` + Control Plane `2.4.x`.
 

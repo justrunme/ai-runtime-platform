@@ -14,7 +14,7 @@
 | Redis shared state (HA) | Supported | Required for replicas > 1; demo Redis is reference-only |
 | Production profile fail-closed | Supported | OIDC/JWKS + iss/aud + Control Plane + Redis Secrets |
 | API auth middleware | Supported | All non-public routes; claims on `request.state` |
-| Platform combined e2e | Supported | mock CP (PR) + OIDC + real CP (release/nightly) + HA nightly |
+| Platform combined e2e | Supported | mock CP (PR) + OIDC + real CP (release/weekly) + HA nightly |
 | OpenAI error envelope | Supported | Top-level `{error}` contract tests |
 | `/livez` `/readyz` | Supported | Production probes; draining status |
 | Observed streaming lifecycle | Supported | TTFT + terminal outcomes |
@@ -34,9 +34,9 @@ Supported means covered by tests/docs and intended for production profiles. Refe
 
 | Control Plane | Runtime | Status |
 | --- | --- | --- |
-| **2.4.x** | **2.3.x** | Current stable — see [compatibility matrix](compatibility-matrix.md) |
+| **2.4.x** | **2.3.x** | Current stable — see [compatibility](compatibility.md) |
 
-Release/nightly e2e also gates CP `2.0.0` (2.x baseline) and legacy `1.3.0`.
+Release/weekly e2e also gates CP `2.0.0` (2.x baseline) and legacy `1.3.0`.
 
 ## Honest limitations
 

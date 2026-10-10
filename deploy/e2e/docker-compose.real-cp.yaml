@@ -1,4 +1,4 @@
-# Release/nightly proof against published Control Plane image.
+# Release/weekly proof against published Control Plane image.
 # Keeps mock OpenAI + Redis + (optional) mock OIDC from the base/oidc files.
 services:
   control-plane:
