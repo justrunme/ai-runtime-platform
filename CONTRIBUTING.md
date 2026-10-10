@@ -1,37 +1,44 @@
 # Contributing
 
-Thanks for your interest in improving the AI Runtime Platform.
-
 ## Development setup
 
 ```sh
 python -m venv .venv
 . .venv/bin/activate
 pip install -e '.[dev]'
-pre-commit install   # optional, runs ruff on commit
+pre-commit install   # optional; runs ruff on commit
 ```
 
-## Before opening a pull request
+## Branch naming
 
-Run the full local gate; it must pass:
+- `feat/<short-name>`
+- `fix/<short-name>`
+- `chore/<short-name>`
+- `docs/<short-name>`
+- `ci/<short-name>`
+
+## Commits
+
+Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`, `ci:`).
+
+## Tests
 
 ```sh
-make validate   # ruff check + ruff format --check + pytest + helm lint + kustomize render
+make validate   # ruff check + format --check + pytest + helm lint + kustomize render
 ```
 
-Useful individual targets: `make test`, `make lint`, `make fmt`, `make fmt-check`,
-`make helm-lint`, `make render`.
+Useful targets: `make test`, `make lint`, `make fmt`, `make helm-lint`, `make render`.
 
-## Conventions
+Gateway tests live in `app/gateway/tests/`.
 
-- **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`).
-- **Python**: `make` targets use `PYTHON ?= python3`. Override with `make test PYTHON=.venv/bin/python` when needed.
-- **Code style**: enforced by `ruff` (lint + format). Run `make fmt` before committing.
-- **Comments and identifiers**: English only.
-- **Diffs**: keep them minimal and focused; avoid unrelated reformatting.
-- **Tests**: add or update tests for behavioural changes; gateway tests live in `app/gateway/tests/`.
+## Pull requests
 
-## Branches and PRs
+Work on a feature branch; open a PR against `main`. CI (`python`, `manifests`, `docker`) must be green. Prefer squash merge.
 
-Work on a feature branch and open a PR against `main`. CI (`python`, `manifests`,
-`docker`) must be green before merge.
+Checklist:
+
+- [ ] `make validate` passes
+- [ ] Branch uses `feat/` / `fix/` / `chore/` / `docs/` / `ci/`
+- [ ] Conventional commits
+- [ ] Behavioural changes include tests
+- [ ] English-only comments and identifiers
