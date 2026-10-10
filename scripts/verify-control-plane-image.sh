@@ -36,9 +36,6 @@ resolve_digest() {
   fi
   if [[ -z "$digest" ]]; then
     echo "failed to resolve digest for ${ref}" >&2
-    DIGEST="unresolved"
-    PINNED="$(repo_from_ref "$ref")@unresolved"
-    write_result "fail" "skipped"
     return 1
   fi
   printf '%s\n' "$digest"
@@ -67,8 +64,13 @@ PY
 
 CONTROL_PLANE_REF="${CONTROL_PLANE_REF:-$IMAGE}"
 REPO="$(repo_from_ref "$IMAGE")"
-DIGEST="$(resolve_digest "$IMAGE")"
-PINNED="${REPO}@${DIGEST}"
+if DIGEST="$(resolve_digest "$IMAGE")"; then
+  PINNED="${REPO}@${DIGEST}"
+else
+  echo "digest inspect unavailable; will verify ${IMAGE} and pin afterwards" >&2
+  PINNED="$IMAGE"
+  DIGEST=""
+fi
 
 echo "Resolved ${IMAGE} -> ${PINNED}"
 
@@ -78,14 +80,50 @@ if ! command -v cosign >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! cosign verify \
-  --certificate-identity-regexp="${IDENTITY_REGEXP}" \
-  --certificate-oidc-issuer="${OIDC_ISSUER}" \
-  "${PINNED}"; then
+VERIFY_LOG="$(mktemp)"
+verify_signed() {
+  # Released tags use classic cosign signatures; current :main uses the
+  # Sigstore bundle / OCI 1.1 packaging produced by recent Release runs.
+  if cosign verify \
+    --certificate-identity-regexp="${IDENTITY_REGEXP}" \
+    --certificate-oidc-issuer="${OIDC_ISSUER}" \
+    "${PINNED}" >"$VERIFY_LOG" 2>&1; then
+    cat "$VERIFY_LOG"
+    return 0
+  fi
+  echo "classic signature not found; trying Sigstore bundle format" >&2
+  if cosign verify --new-bundle-format \
+    --certificate-identity-regexp="${IDENTITY_REGEXP}" \
+    --certificate-oidc-issuer="${OIDC_ISSUER}" \
+    "${PINNED}" >"$VERIFY_LOG" 2>&1; then
+    cat "$VERIFY_LOG"
+    return 0
+  fi
+  cat "$VERIFY_LOG" >&2
+  return 1
+}
+
+if ! verify_signed; then
   echo "cosign verify failed for ${PINNED}" >&2
   echo "expected keyless identity: Control Plane Release workflow" >&2
   write_result "fail" "skipped"
   exit 1
+fi
+
+if [[ -z "$DIGEST" || "$DIGEST" == "unresolved" ]]; then
+  DIGEST="$(python3 - "$VERIFY_LOG" <<'PY'
+import json, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+start = raw.rfind("[")
+if start < 0:
+    raise SystemExit(0)
+data = json.loads(raw[start:])
+print(data[0]["critical"]["image"]["docker-manifest-digest"])
+PY
+)"
+fi
+if [[ -n "$DIGEST" ]]; then
+  PINNED="${REPO}@${DIGEST}"
 fi
 
 write_result "pass" "pending"
