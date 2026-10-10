@@ -1,30 +1,24 @@
 # Compatibility
 
 Control Plane × Runtime results from the real Control Plane e2e.
-Each image is resolved to a digest and checked with keyless
-`cosign verify` (identity = the Control Plane **Release** workflow)
-before the stack starts.
+Each image is resolved to a digest and checked with keyless `cosign verify` (identity = the Control Plane **Release** workflow) before the stack starts.
 
-Last updated: `2026-10-10T12:35:00Z` (local signature check; e2e from the last green cells on `main`)
+Last updated: `2026-10-10T12:45:46Z`
+Workflow run: https://github.com/justrunme/ai-runtime-platform/actions/runs/38053041482
 
 | Control Plane | Runtime | Image digest | Signature | e2e |
 | --- | --- | --- | --- | --- |
 | 2.4.0 | 2.3.x | `sha256:608f7758bd29979c81db146b9d76b83b6a7b906446d31c15dddbabd8c0a13274` | pass | pass |
-| main | 2.3.x | `sha256:2444671ff06dbdcff8a3ca6029aeb3a5bb7513b4c3bc821bd4f150470a86d194` | fail | skipped |
+| main | 2.3.x | `sha256:9afcd28d754f69a3ee97b91de0c3066077aa18c1900a9c2cde18bcff7059dee0` | pass | pass |
 | 2.0.0 | 2.3.x | `sha256:38b4de3e5bbcbfcb4012d9b16650139eb58171cec29aed7424dad807100f0450` | pass | pass |
 | 1.3.0 | 2.3.x | `sha256:29d282ab7d0b60742e56e44aaeca76054cca4d5358d165f80ae47c37ae3c4ec6` | pass | pass |
 
 ## Pins
 
 - `2.4.0` → `ghcr.io/justrunme/ai-infra-control-plane@sha256:608f7758bd29979c81db146b9d76b83b6a7b906446d31c15dddbabd8c0a13274`
-- `main` → `ghcr.io/justrunme/ai-infra-control-plane:main` (resolved at runtime; current tip unsigned)
+- `main` → `ghcr.io/justrunme/ai-infra-control-plane@sha256:9afcd28d754f69a3ee97b91de0c3066077aa18c1900a9c2cde18bcff7059dee0`
 - `2.0.0` → `ghcr.io/justrunme/ai-infra-control-plane@sha256:38b4de3e5bbcbfcb4012d9b16650139eb58171cec29aed7424dad807100f0450`
 - `1.3.0` → `ghcr.io/justrunme/ai-infra-control-plane@sha256:29d282ab7d0b60742e56e44aaeca76054cca4d5358d165f80ae47c37ae3c4ec6`
-
-`main` is published (multi-arch) but the latest Control Plane Release run
-failed at provenance attest **before** `cosign sign`, so the floating tag
-has no keyless signature. The e2e cell is skipped until the Release
-workflow signs the tip.
 
 ## Verify locally
 

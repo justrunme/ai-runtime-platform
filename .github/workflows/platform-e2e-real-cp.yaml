@@ -4,9 +4,6 @@ on:
   schedule:
     - cron: "0 3 * * 1" # weekly Monday 03:00 UTC
   workflow_dispatch:
-  # Temporary: prove this branch without a pull request. Remove after the run is green.
-  push:
-    branches: [ci/compat-matrix]
 
 permissions:
   contents: read
