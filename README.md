@@ -27,6 +27,20 @@ make validate
 
 See [docs/demo-flow.md](docs/demo-flow.md) for the local demo path.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  Client[OIDC client] --> GW[app/gateway FastAPI]
+  GW --> CP[Control Plane decide]
+  GW --> Route[route / canary / fallback]
+  Route --> vLLM[charts/vllm-runtime]
+  Route --> KS[deploy/kserve]
+  GW --> OTel[deploy/observability]
+  GitOps[gitops/argocd] --> GW
+  CI[.github/workflows/ci.yaml] --> Rel[release.yaml]
+```
+
 ## On justrunme.com
 
 This repository is the public evidence base for:
