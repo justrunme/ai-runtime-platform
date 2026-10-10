@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release/nightly proof against published Control Plane + OIDC production profile.
+# Release/weekly proof against published Control Plane + OIDC production profile.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"

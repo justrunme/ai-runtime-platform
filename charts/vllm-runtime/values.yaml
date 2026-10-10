@@ -2,9 +2,9 @@ replicaCount: 1
 
 image:
   repository: vllm/vllm-openai
-  tag: v0.26.0
+  tag: v0.31.0
   # When set, renders repository@digest (immutable) instead of tag.
-  digest: ""
+  digest: sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

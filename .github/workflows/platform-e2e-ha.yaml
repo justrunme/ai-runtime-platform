@@ -15,10 +15,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        control_plane:
-          - "2.4.0"
+        include:
+          - control_plane: "2.4.0"
+            image: ghcr.io/justrunme/ai-infra-control-plane@sha256:608f7758bd29979c81db146b9d76b83b6a7b906446d31c15dddbabd8c0a13274
     env:
-      CONTROL_PLANE_IMAGE: ghcr.io/justrunme/ai-infra-control-plane:${{ matrix.control_plane }}
+      CONTROL_PLANE_IMAGE: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

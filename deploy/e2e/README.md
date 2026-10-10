@@ -24,7 +24,7 @@ docker compose \
 Proves JWT middleware on `/v1/models` and governed chat: missing/invalid/expired/wrong
 issuer/audience → `401`; valid token → `200`.
 
-## Release / nightly (real Control Plane)
+## Release / weekly (real Control Plane)
 
 ```bash
 docker compose \
@@ -35,8 +35,11 @@ docker compose \
 ./deploy/e2e/run_e2e_real_cp.sh
 ```
 
-Uses `ghcr.io/justrunme/ai-infra-control-plane:2.4.0` by default (`CONTROL_PLANE_IMAGE` override).
-Nightly/manual: matrix over CP `2.4.0`, `2.0.0`, `1.3.0`, and `main`.
+Uses digest-pinned `ghcr.io/justrunme/ai-infra-control-plane:2.4.0` by default (`CONTROL_PLANE_IMAGE` override).
+Weekly/manual: matrix over CP `2.4.0`, `2.0.0`, `1.3.0`, and `main`. Each cell
+resolves the image to a digest and runs `cosign verify` (Control Plane Release
+workflow identity) before compose up. Results are written to the job summary
+and [docs/compatibility.md](../../docs/compatibility.md).
 Tag release: reusable workflow matrix (`2.4.0` + `2.0.0` + `1.3.0`) is a hard gate before image/chart publish.
 
 ## Nightly HA closed-loop
