@@ -488,6 +488,33 @@ The project is now maintenance-oriented.
 
 See also [maturity matrix](docs/maturity-matrix.md).
 
+## Demo
+
+Platform e2e golden path (docker compose mocks): allow → block → approval → streaming → HA → fail-closed.
+
+```bash
+./deploy/e2e/run_e2e.sh
+```
+
+<p align="center">
+  <img src="docs/assets/platform-e2e.svg" alt="AI Runtime platform e2e demo terminal: allow/block/approval/HA/fail-closed" width="100%" />
+</p>
+
+Local interactive flow: [docs/demo-flow.md](docs/demo-flow.md)
+
+## Results
+
+Measured from CI (not estimates). Details: [docs/results.md](docs/results.md) · [docs/results.json](docs/results.json).
+
+| Check | Outcome | Source |
+| --- | --- | --- |
+| Allow → inference | 200 | [38060436977](https://github.com/justrunme/ai-runtime-platform/actions/runs/38060436977) `platform-e2e` |
+| Governance block | **403** | same |
+| Approval required / replay / mismatch | **409** | same |
+| Redis / Control Plane down | **503** fail-closed | same |
+| Golden-path suite duration | **21.5 s** | same (job log wall clock) |
+
+
 ## Security note
 
 No production secret, token, model licence acceptance, or cloud credential belongs in this repository. Supply them through the cluster's secret-management and workload-identity mechanism. Released images are signed with cosign, scanned with Trivy, and published with an SBOM; see [SECURITY.md](SECURITY.md) for verification and reporting.
