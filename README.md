@@ -17,6 +17,8 @@ OpenAI-compatible execution plane on Kubernetes.
 [![Case study](https://img.shields.io/badge/case-justrunme.com-111111)](https://justrunme.com/cases/ai-runtime-execution-plane/)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/justrunme/ai-runtime-platform/badge)](https://securityscorecards.dev/viewer/?uri=github.com/justrunme/ai-runtime-platform)
 
+Evidence: [docs/EVIDENCE.md](docs/EVIDENCE.md)
+
 Case study: [AI Runtime Platform](https://justrunme.com/cases/ai-runtime-execution-plane/) · [Andrey Lesnikov](https://justrunme.com/)
 
 ## What it does
@@ -64,10 +66,10 @@ This repository is the public evidence base for:
 
 Site: [justrunme.com](https://justrunme.com/) · Author: [Andrey Lesnikov](https://justrunme.com/about/)
 
-> **Execution Plane v2.3** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
+> **Execution Plane v2.4** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
 
-Current release: **Runtime v2.3.0**.  
-Recommended pair: **Control Plane v2.4.x + Runtime v2.3.x**.
+Current release: **Runtime v2.4.0**  
+Recommended pair: **Control Plane v2.5.x + Runtime v2.4.x**
 
 ```text
 OIDC Client
@@ -480,8 +482,8 @@ docs/                 Architecture and operational decisions
 
 ## Project status
 
-Runtime v2.3 is feature-complete for the declared Supported scope.
-Recommended pair: **Control Plane v2.4.x + Runtime v2.3.x**
+Runtime v2.4 is feature-complete for the declared Supported scope.
+Recommended pair: **Control Plane v2.5.x + Runtime v2.4.x**
 ([compatibility](docs/compatibility.md)).
 The project is now maintenance-oriented.
 
