@@ -20,7 +20,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import __version__
-from app.gateway.admission import TenantAdmissionController
+from app.gateway.admission import create_admission_controller
 from app.gateway.auth import PUBLIC_PATHS, install_authentication, request_is_authorized
 from app.gateway.config import (
     GatewaySettings,
@@ -149,7 +149,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = GatewaySettings.from_environment()
     app.state.settings = settings
     app.state.runtime_config = RuntimeConfigState.from_settings(settings)
-    app.state.admission = TenantAdmissionController(load_tenant_policy_bundle())
+    app.state.admission = create_admission_controller(
+        load_tenant_policy_bundle(),
+        redis_url=settings.redis_url,
+    )
     app.state.global_admission = GlobalAdmissionController()
     app.state.circuit_breaker = CircuitBreaker()
     app.state.retry_budget = RetryBudget()
@@ -191,6 +194,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         decision_replay = getattr(app.state, "decision_replay", None)
         if decision_replay is not None:
             await decision_replay.aclose()
+        admission = getattr(app.state, "admission", None)
+        if admission is not None and hasattr(admission, "aclose"):
+            await admission.aclose()
         await app.state.decision_store.aclose()
         await app.state.client.aclose()
 

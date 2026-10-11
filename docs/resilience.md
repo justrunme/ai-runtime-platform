@@ -31,13 +31,26 @@ On `SIGTERM` / `SIGINT` (and during lifespan shutdown):
 3. New `/v1/chat/completions` requests return `503 gateway_draining`
 4. In-flight streams finish and release admission leases
 
+## Tenant / fleet admission
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `REDIS_URL` | unset | When set, tenant concurrency is fleet-wide |
+| `ADMISSION_LEASE_TTL_SECONDS` | `30` | Lease lifetime; expiry reclaims capacity after pod loss |
+| `ADMISSION_LEASE_RENEW_INTERVAL_SECONDS` | `10` | Renewal cadence while a request/stream holds a lease |
+| `ADMISSION_REDIS_UNAVAILABLE_POLICY` | `fail_closed` | Default when tenant policy omits `redisUnavailablePolicy` |
+
+See [tenant isolation](tenant-isolation.md) for semaphore semantics, fencing tokens,
+and per-tenant fail-closed / degraded / fail-open behaviour.
+
 ## Layering
 
 ```text
 drain check
-  → global admission
-  → tenant admission / allowlist
+  → global admission (process-local)
+  → tenant / fleet admission (+ allowlist)
   → Control Plane governance
   → circuit-aware routing
   → inference (+ retry budget on fallback)
 ```
+

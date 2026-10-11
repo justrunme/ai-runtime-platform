@@ -134,7 +134,7 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
     lease: AdmissionLease | None = None
     if admission is not None:
         try:
-            lease = await admission.acquire_lease(tenant_id)
+            lease = await admission.acquire_lease(tenant_id, model=str(requested_model or "*"))
         except Exception:
             if global_held and global_admission is not None:
                 await global_admission.release()

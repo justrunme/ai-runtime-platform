@@ -8,7 +8,7 @@
 | Enforcement evidence headers | Supported | Decision/policy/request digests; OpenAI body clean |
 | Runtime status / verify | Supported | GitOps close-loop; signed verify token + JWKS; RBAC when JWT verify on |
 | HA closed-loop e2e | Supported | Nightly: 2 CP (Postgres) + 2 Runtime + Redis + OIDC |
-| Tenant-scoped decisions + admission | Supported | JWT tenant; per-replica concurrency limits |
+| Tenant-scoped decisions + admission | Supported | JWT tenant; Redis fleet-wide concurrency leases |
 | Global admission / circuit / drain | Supported | Process-local capacity + SIGTERM drain |
 | Signed decision token | Supported | Optional; local request-digest binding when present |
 | Redis shared state (HA) | Supported | Required for replicas > 1; demo Redis is reference-only |
@@ -44,7 +44,6 @@ Release/weekly e2e also gates CP `2.0.0` (2.x baseline) and legacy `1.3.0`.
 | --- | --- |
 | Argo/Flux reconciliation from Runtime | Out of scope (Execution Plane proves; CP/GitOps applies) |
 | Usage queue durability | Attribution-grade, best-effort in-memory + webhook retries |
-| Fleet-wide concurrency | Per-replica admission limits |
 | MCP session HA | Process-local; sticky sessions or shared store required for multi-replica |
 | Tenant upstream credentials | Experimental / reserved |
 | Billing ledger | Not implemented |

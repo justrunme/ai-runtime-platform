@@ -1,5 +1,13 @@
 # Upgrade guide
 
+## To v2.5.0 (fleet admission)
+
+1. With `REDIS_URL`, tenant `maxConcurrentRequests` is **fleet-wide** (not per-replica).
+2. Prefer policy keys `maxConcurrentRequests` / `maxQueuedRequests` (legacy `*PerReplica` aliases still accepted).
+3. Set `redisUnavailablePolicy` per tenant (`fail_closed` default, or `degraded` / `fail_open`).
+4. Tune `ADMISSION_LEASE_TTL_SECONDS` / `ADMISSION_LEASE_RENEW_INTERVAL_SECONDS` for stream length vs pod-death recovery.
+5. See [tenant isolation](tenant-isolation.md) and [resilience](resilience.md).
+
 ## To v2.3.0
 
 1. For sessionful MCP servers set `transport: streamable-http` (or `sessionMode: always`).
@@ -27,7 +35,7 @@
 2. Prefer release pair with Control Plane `2.0.x` (gate still proves `1.3.0` compatibility).
 3. MCP execution without Control Plane now returns `503` unless `MCP_ALLOW_UNGOVERNED=true`.
 4. When JWT verify is enabled, callers of `/v1/runtime/status|verify` and `/mcp/servers` need runtime roles (`platform-admin`, `runtime-service`, or auditor as documented).
-5. Tenant policy keys prefer `maxConcurrentRequestsPerReplica` (legacy alias still accepted).
+5. Tenant policy keys historically used `maxConcurrentRequestsPerReplica` (still accepted; prefer `maxConcurrentRequests` for fleet-wide limits).
 
 ## To v2.0.0
 

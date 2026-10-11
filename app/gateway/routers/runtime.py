@@ -38,11 +38,15 @@ async def runtime_status(request: Request) -> dict[str, Any]:
     require_any_role(request, STATUS_ROLES)
     state = request.app.state.runtime_config
     healthy, unhealthy, unknown = await _backend_counts(request)
-    return state.status_payload(
+    payload = state.status_payload(
         backends_healthy=healthy,
         backends_unhealthy=unhealthy,
         backends_unknown=unknown,
     )
+    admission = getattr(request.app.state, "admission", None)
+    if admission is not None and hasattr(admission, "status"):
+        payload["admission"] = admission.status()
+    return payload
 
 
 @router.get("/v1/runtime/jwks")
