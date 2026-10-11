@@ -69,8 +69,20 @@ async def enforce_tool_governance(
     tool_name: str,
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    if not config.enabled:
+    if config.mode == "disabled" or not config.enabled:
         return None
+    if config.misconfigured:
+        raise HTTPException(
+            status_code=503,
+            detail=governance_detail(
+                code="governance_misconfigured",
+                message=(
+                    "GOVERNANCE_MODE=enforce requires CONTROL_PLANE_URL; "
+                    "set GOVERNANCE_MODE=disabled explicitly to skip enforcement"
+                ),
+                result={"final_verdict": "misconfigured", "reasons": [], "stages": {}},
+            ),
+        )
 
     body = build_tool_evaluate_payload(request, tool_name, payload, config)
     evaluate_url = f"{config.control_plane_url}/governance/evaluate-tool"

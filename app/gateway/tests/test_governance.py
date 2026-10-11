@@ -16,6 +16,7 @@ from app.gateway.main import (
     app,
     create_decision_store,
 )
+from app.gateway.readiness import build_readiness_report
 
 
 def _governance_config(**overrides) -> GovernanceConfig:
@@ -33,22 +34,71 @@ def _governance_config(**overrides) -> GovernanceConfig:
         "default_cost_per_hour_usd": 0.18,
         "default_month_to_date_cost_usd": 100.0,
         "default_forecast_monthly_cost_usd": 400.0,
+        "mode": "enforce",
     }
     defaults.update(overrides)
     return GovernanceConfig(**defaults)
 
 
-def test_governance_config_is_disabled_without_control_plane_url(monkeypatch) -> None:
+def _bootstrap_app(
+    *,
+    governance: GovernanceConfig | None,
+    handler=None,
+) -> httpx.AsyncClient:
+    def default_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    settings = GatewaySettings(
+        model_targets={
+            "qwen": ModelTarget(
+                url="http://primary/v1", input_cost_per_million=0, output_cost_per_million=0
+            )
+        }
+    )
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler or default_handler))
+    app.state.settings = settings
+    app.state.client = upstream
+    app.state.backend_health = BackendHealthStore(settings, upstream)
+    app.state.decision_store = create_decision_store(None)
+    app.state.governance = governance
+    app.state.tenant_attribution = None
+    app.state.decision_replay = None
+    return upstream
+
+
+def test_governance_enforce_without_control_plane_url_is_misconfigured(monkeypatch) -> None:
     monkeypatch.delenv("CONTROL_PLANE_URL", raising=False)
-    assert GovernanceConfig.from_environment() is None
+    monkeypatch.delenv("GOVERNANCE_MODE", raising=False)
+    config = GovernanceConfig.from_environment()
+    assert config.mode == "enforce"
+    assert config.control_plane_url == ""
+    assert config.misconfigured is True
+    assert config.enabled is True
+
+
+def test_governance_disabled_mode_requires_explicit_env(monkeypatch) -> None:
+    monkeypatch.delenv("CONTROL_PLANE_URL", raising=False)
+    monkeypatch.setenv("GOVERNANCE_MODE", "disabled")
+    config = GovernanceConfig.from_environment()
+    assert config.mode == "disabled"
+    assert config.enabled is False
+    assert config.misconfigured is False
+
+
+def test_governance_rejects_unknown_mode(monkeypatch) -> None:
+    monkeypatch.setenv("GOVERNANCE_MODE", "soft")
+    with pytest.raises(ValueError, match="GOVERNANCE_MODE"):
+        GovernanceConfig.from_environment()
 
 
 def test_governance_config_reads_environment(monkeypatch) -> None:
+    monkeypatch.setenv("GOVERNANCE_MODE", "enforce")
     monkeypatch.setenv("CONTROL_PLANE_URL", "http://control-plane:8080/")
     monkeypatch.setenv("GOVERNANCE_FAIL_OPEN", "true")
     monkeypatch.setenv("GOVERNANCE_DEFAULT_TEAM", "research")
     config = GovernanceConfig.from_environment()
     assert config is not None
+    assert config.mode == "enforce"
     assert config.control_plane_url == "http://control-plane:8080"
     assert config.fail_open is True
     assert config.default_team == "research"
@@ -447,4 +497,108 @@ async def test_chat_completions_returns_403_when_governance_blocks() -> None:
     assert "detail" not in body
     assert body["final_verdict"] == "block"
     assert body["error"]["code"] == "governance_blocked"
+    await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_enforce_without_control_plane_url_fails_readiness() -> None:
+    """Negative: missing CONTROL_PLANE_URL under enforce must not report ready."""
+    upstream = _bootstrap_app(
+        governance=_governance_config(control_plane_url="", mode="enforce", enabled=True)
+    )
+    ready, report = await build_readiness_report(app)
+    assert ready is False
+    assert report["checks"]["control_plane"]["ok"] is False
+    assert report["checks"]["control_plane"]["required"] is True
+    assert report["checks"]["control_plane"]["mode"] == "enforce"
+    assert "CONTROL_PLANE_URL" in report["checks"]["control_plane_error"]
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        response = await client.get("/readyz")
+    assert response.status_code == 503
+    await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_enforce_without_control_plane_url_rejects_chat_with_503() -> None:
+    """Negative: enforce without CP must not silently skip governance."""
+    upstream_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        upstream_calls.append(request.url.path)
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    upstream = _bootstrap_app(
+        governance=_governance_config(control_plane_url="", mode="enforce", enabled=True),
+        handler=handler,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "qwen", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert response.status_code == 503
+    body = response.json()
+    assert "detail" not in body
+    assert body["error"]["code"] == "governance_misconfigured"
+    assert upstream_calls == []
+    await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_disabled_mode_ready_and_health_exposes_mode() -> None:
+    from app.gateway.governance import observe_governance_mode
+
+    upstream = _bootstrap_app(
+        governance=_governance_config(control_plane_url="", mode="disabled", enabled=False)
+    )
+    observe_governance_mode("disabled")
+    ready, report = await build_readiness_report(app)
+    assert ready is True
+    assert report["checks"]["control_plane"]["mode"] == "disabled"
+    assert report["checks"]["control_plane"]["required"] is False
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        health = await client.get("/health")
+        healthz = await client.get("/healthz")
+        metrics = await client.get("/metrics")
+        chat = await client.post(
+            "/v1/chat/completions",
+            json={"model": "qwen", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert health.status_code == 200
+    assert health.json()["governance_mode"] == "disabled"
+    assert healthz.json()["governance_mode"] == "disabled"
+    assert chat.status_code == 200
+    assert 'gateway_governance_mode{mode="disabled"} 1.0' in metrics.text
+    assert 'gateway_governance_mode{mode="enforce"} 0.0' in metrics.text
+    await upstream.aclose()
+
+
+@pytest.mark.anyio
+async def test_disabled_mode_does_not_call_control_plane() -> None:
+    """Negative: disabled must not enforce even if a URL is present."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"usage": {}}, request=request)
+
+    upstream = _bootstrap_app(
+        governance=_governance_config(
+            control_plane_url="http://control-plane:8080",
+            mode="disabled",
+            enabled=False,
+        ),
+        handler=handler,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": "qwen", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert response.status_code == 200
+    assert "/governance/evaluate" not in calls
     await upstream.aclose()

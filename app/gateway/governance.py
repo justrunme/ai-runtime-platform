@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import HTTPException, Request
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge
 
 from app.gateway.identity import (
     claim_flag,
@@ -16,11 +17,27 @@ from app.gateway.identity import (
     resolve_workload_identity,
 )
 
+logger = logging.getLogger(__name__)
+
+GovernanceMode = Literal["enforce", "disabled"]
+
 GOVERNANCE_DECISIONS = Counter(
     "gateway_governance_decisions_total",
     "Governance verdicts returned by the control plane before inference execution.",
     ["verdict", "team"],
 )
+
+GOVERNANCE_MODE = Gauge(
+    "gateway_governance_mode",
+    "Active governance mode (1 for the selected mode label, else 0).",
+    ["mode"],
+)
+
+
+def observe_governance_mode(mode: str) -> None:
+    """Export the configured governance mode as a Prometheus gauge."""
+    for candidate in ("enforce", "disabled"):
+        GOVERNANCE_MODE.labels(mode=candidate).set(1.0 if candidate == mode else 0.0)
 
 
 @dataclass(frozen=True)
@@ -38,23 +55,40 @@ class GovernanceConfig:
     default_cost_per_hour_usd: float
     default_month_to_date_cost_usd: float
     default_forecast_monthly_cost_usd: float
+    mode: GovernanceMode = "enforce"
+
+    @property
+    def misconfigured(self) -> bool:
+        """True when enforce mode is selected but CONTROL_PLANE_URL is missing."""
+        return self.mode == "enforce" and not bool(self.control_plane_url)
 
     @classmethod
-    def from_environment(cls) -> GovernanceConfig | None:
+    def from_environment(cls) -> GovernanceConfig:
+        raw_mode = os.getenv("GOVERNANCE_MODE", "enforce").strip().lower() or "enforce"
+        if raw_mode not in {"enforce", "disabled"}:
+            raise ValueError(f"GOVERNANCE_MODE must be 'enforce' or 'disabled', got {raw_mode!r}")
+        mode: GovernanceMode = "disabled" if raw_mode == "disabled" else "enforce"
         url = os.getenv("CONTROL_PLANE_URL", "").strip().rstrip("/")
-        if not url:
-            return None
-        enabled = os.getenv("GOVERNANCE_ENFORCEMENT", "true").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-        }
+        if mode == "enforce" and not url:
+            logger.error(
+                "GOVERNANCE_MODE=enforce requires CONTROL_PLANE_URL; "
+                "readiness will fail and governed requests return 503. "
+                "Set GOVERNANCE_MODE=disabled explicitly for demos without a control plane."
+            )
+        if mode == "disabled":
+            enabled = False
+        else:
+            enabled = os.getenv("GOVERNANCE_ENFORCEMENT", "true").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+            }
         fail_open = os.getenv("GOVERNANCE_FAIL_OPEN", "false").strip().lower() in {
             "1",
             "true",
             "yes",
         }
-        return cls(
+        config = cls(
             control_plane_url=url,
             enabled=enabled,
             fail_open=fail_open,
@@ -74,7 +108,10 @@ class GovernanceConfig:
             default_forecast_monthly_cost_usd=float(
                 os.getenv("GOVERNANCE_DEFAULT_FORECAST_MONTHLY_COST_USD", "400")
             ),
+            mode=mode,
         )
+        observe_governance_mode(config.mode)
+        return config
 
 
 def _header_bool(request: Request, name: str) -> bool:
@@ -284,8 +321,20 @@ async def enforce_governance(
     replay_store: object | None = None,
 ) -> dict[str, Any] | None:
     """Call the control plane and reject the request when governance blocks it."""
-    if not config.enabled:
+    if config.mode == "disabled" or not config.enabled:
         return None
+    if config.misconfigured:
+        raise HTTPException(
+            status_code=503,
+            detail=governance_detail(
+                code="governance_misconfigured",
+                message=(
+                    "GOVERNANCE_MODE=enforce requires CONTROL_PLANE_URL; "
+                    "set GOVERNANCE_MODE=disabled explicitly to skip enforcement"
+                ),
+                result={"final_verdict": "misconfigured", "reasons": [], "stages": {}},
+            ),
+        )
 
     body = build_evaluate_payload(
         request,

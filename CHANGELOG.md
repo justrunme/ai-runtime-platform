@@ -15,6 +15,10 @@
 
 - Tenant policy prefers `maxConcurrentRequests` / `maxQueuedRequests` (legacy `*PerReplica` aliases kept)
 - Docs no longer describe concurrency limits as per-replica-only when Redis is configured
+- Explicit `GOVERNANCE_MODE` (`enforce`|`disabled`): default `enforce` fails readiness / returns `503`
+  when `CONTROL_PLANE_URL` is missing instead of silently skipping governance; `disabled` must be set
+  explicitly (local demo compose / single-node overlay). Mode is exposed on `/health` and
+  `gateway_governance_mode`. Real-CP e2e asserts exact `409` + error envelope for replay/mismatch.
 
 ## [2.4.0] - 2026-10-10
 

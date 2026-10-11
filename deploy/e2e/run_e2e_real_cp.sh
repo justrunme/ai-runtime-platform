@@ -94,7 +94,17 @@ replay_code="$(curl -sS -o /tmp/real-replay.json -w '%{http_code}' \
   -H "x-ai-approval-id: ${approval_id}" \
   -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"need approval"}]}' \
   "$A/v1/chat/completions")"
-[[ "$replay_code" != "200" ]] || fail_http "replay unexpectedly allowed" "$replay_code" /tmp/real-replay.json
+[[ "$replay_code" == "409" ]] || fail_http "replay expected 409" "$replay_code" /tmp/real-replay.json
+python3 - <<'PY'
+import json
+body = json.load(open("/tmp/real-replay.json"))
+assert "detail" not in body, body
+assert body.get("final_verdict") == "approval_required", body
+assert body["error"]["type"] == "governance_error", body
+assert body["error"]["code"] == "governance_approval_required", body
+assert body.get("decision_id"), body
+assert body.get("policy_digest"), body
+PY
 
 echo "== body change after approval rejected =="
 apr2_code="$(curl -sS -o /tmp/real-apr2.json -w '%{http_code}' \
@@ -114,7 +124,17 @@ mismatch_code="$(curl -sS -o /tmp/real-mismatch.json -w '%{http_code}' \
   -H "x-ai-approval-id: ${approval_id2}" \
   -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"CHANGED BODY"}]}' \
   "$A/v1/chat/completions")"
-[[ "$mismatch_code" != "200" ]] || fail_http "changed body unexpectedly allowed" "$mismatch_code" /tmp/real-mismatch.json
+[[ "$mismatch_code" == "409" ]] || fail_http "mismatch expected 409" "$mismatch_code" /tmp/real-mismatch.json
+python3 - <<'PY'
+import json
+body = json.load(open("/tmp/real-mismatch.json"))
+assert "detail" not in body, body
+assert body.get("final_verdict") == "approval_required", body
+assert body["error"]["type"] == "governance_error", body
+assert body["error"]["code"] == "governance_approval_required", body
+assert body.get("decision_id"), body
+assert body.get("policy_digest"), body
+PY
 
 echo "== runtime pod restart keeps shared decision =="
 req_id="real-dec-$(date +%s)"

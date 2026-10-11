@@ -14,6 +14,9 @@ spec:
               value: "1"
             - name: REQUIRE_SHARED_STATE
               value: "false"
+            # Local single-node demo has no Control Plane; disable explicitly.
+            - name: GOVERNANCE_MODE
+              value: disabled
           startupProbe:
             httpGet:
               path: /livez

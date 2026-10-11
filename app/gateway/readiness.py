@@ -63,31 +63,46 @@ async def build_readiness_report(app: FastAPI) -> tuple[bool, dict[str, Any]]:
     checks["admission"] = admission_status
 
     governance: GovernanceConfig | None = getattr(app.state, "governance", None)
+    governance_mode = (
+        getattr(governance, "mode", "disabled") if governance is not None else "disabled"
+    )
     control_plane_ok = True
-    control_plane_required = bool(governance and governance.enabled and not governance.fail_open)
-    if control_plane_required and governance is not None:
-        client: httpx.AsyncClient | None = getattr(app.state, "client", None)
-        try:
-            if client is None:
-                control_plane_ok = False
-            else:
-                response = await client.get(
-                    f"{governance.control_plane_url}/readyz",
-                    timeout=min(2.0, governance.timeout_seconds),
-                )
-                if response.status_code == 404:
-                    response = await client.get(
-                        f"{governance.control_plane_url}/healthz",
-                        timeout=min(2.0, governance.timeout_seconds),
-                    )
-                control_plane_ok = response.is_success
-        except Exception as error:  # noqa: BLE001
+    control_plane_required = False
+    if governance is not None and governance.mode == "enforce":
+        if governance.misconfigured:
+            control_plane_required = True
             control_plane_ok = False
-            checks["control_plane_error"] = str(error)
+            checks["control_plane_error"] = (
+                "CONTROL_PLANE_URL is required when GOVERNANCE_MODE=enforce"
+            )
+        else:
+            control_plane_required = bool(governance.enabled and not governance.fail_open)
+            if control_plane_required:
+                client: httpx.AsyncClient | None = getattr(app.state, "client", None)
+                try:
+                    if client is None:
+                        control_plane_ok = False
+                    else:
+                        response = await client.get(
+                            f"{governance.control_plane_url}/readyz",
+                            timeout=min(2.0, governance.timeout_seconds),
+                        )
+                        if response.status_code == 404:
+                            response = await client.get(
+                                f"{governance.control_plane_url}/healthz",
+                                timeout=min(2.0, governance.timeout_seconds),
+                            )
+                        control_plane_ok = response.is_success
+                except Exception as error:  # noqa: BLE001
+                    control_plane_ok = False
+                    checks["control_plane_error"] = str(error)
     checks["control_plane"] = {
         "ok": control_plane_ok,
         "required": control_plane_required,
-        "url": governance.control_plane_url if governance else None,
+        "url": governance.control_plane_url
+        if governance and governance.control_plane_url
+        else None,
+        "mode": governance_mode,
     }
 
     backends: list[dict[str, Any]] = []
