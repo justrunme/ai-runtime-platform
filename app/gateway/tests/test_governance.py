@@ -86,6 +86,21 @@ def test_build_evaluate_payload_maps_headers_and_cost() -> None:
     assert payload["tokens_today"] == 1200
     assert payload["input_tokens"] >= 1
     assert payload["cost_per_request_usd"] > 0
+    # Without a live spend counter, static config is used.
+    assert payload["month_to_date_cost_usd"] == 100.0
+
+
+def test_build_evaluate_payload_uses_live_spend_counter() -> None:
+    request = httpx.Request("POST", "http://gw/v1/chat/completions")
+    payload = build_evaluate_payload(
+        request,
+        {"model": "qwen", "messages": [{"content": "hi"}]},
+        _governance_config(),
+        {},
+        month_to_date_cost_usd=42.5,
+    )
+    assert payload["month_to_date_cost_usd"] == 42.5
+    assert payload["untrusted_context"]["month_to_date_cost_usd"] == ""
 
 
 def test_build_evaluate_payload_includes_model_supply_chain_headers() -> None:
@@ -377,6 +392,8 @@ async def test_chat_completions_calls_governance_before_upstream() -> None:
     app.state.backend_health = BackendHealthStore(settings, upstream)
     app.state.decision_store = create_decision_store(None)
     app.state.governance = _governance_config()
+    app.state.tenant_attribution = None
+    app.state.decision_replay = None
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
         response = await client.post(
@@ -420,6 +437,8 @@ async def test_chat_completions_returns_403_when_governance_blocks() -> None:
     app.state.backend_health = BackendHealthStore(settings, upstream)
     app.state.decision_store = create_decision_store(None)
     app.state.governance = _governance_config()
+    app.state.tenant_attribution = None
+    app.state.decision_replay = None
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://gw") as client:
         response = await client.post("/v1/chat/completions", json={"model": "qwen", "messages": []})

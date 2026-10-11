@@ -50,6 +50,33 @@ from app.gateway.usage_events import estimate_gpu_seconds, tokens_from_usage
 router = APIRouter(tags=["chat"])
 
 
+async def _reconcile_quota(
+    tenant_store: TenantAttributionBackend | None,
+    quota_reservation,
+    *,
+    usage: dict | None,
+    spend_usd: float | None,
+) -> None:
+    """Adjust pre-reserved estimate to actual upstream usage / priced spend."""
+    if tenant_store is None or quota_reservation is None:
+        return
+    # If upstream omitted usage fields, keep the reservation (no silent undercount).
+    if not isinstance(usage, dict):
+        return
+    if "prompt_tokens" not in usage and "completion_tokens" not in usage:
+        return
+    from app.gateway.usage_events import tokens_from_usage
+
+    in_tok, out_tok = tokens_from_usage(usage)
+    actual_spend = float(spend_usd or 0.0)
+    await tenant_store.reconcile_usage(
+        quota_reservation,
+        actual_input_tokens=in_tok,
+        actual_output_tokens=out_tok,
+        actual_spend_usd=actual_spend,
+    )
+
+
 @router.post("/v1/chat/completions", response_model=None)
 async def chat_completions(request: Request) -> JSONResponse | StreamingResponse:
     try:
@@ -148,33 +175,62 @@ async def _chat_completions_admitted(
     )
     requests_last_minute: int | None = None
     tokens_today: int | None = None
+    month_to_date_cost_usd: float | None = None
+    quota_reservation = None
+    estimated_input_tokens = 0
+    estimated_output_tokens = 0
+    estimated_spend_usd = 0.0
     if tenant_store is not None:
         team = tenant_store.resolve_team(request)
-        input_tokens, output_tokens = 0, 0
         messages = payload.get("messages")
         if isinstance(messages, list):
             for message in messages:
                 if isinstance(message, dict) and isinstance(message.get("content"), str):
-                    input_tokens += max(1, len(message["content"]) // 4)
-        output_tokens = int(payload.get("max_tokens") or min(input_tokens or 1, 512))
-        await tenant_store.record_request(
-            team, input_tokens=input_tokens or 1, output_tokens=output_tokens
+                    estimated_input_tokens += max(1, len(message["content"]) // 4)
+        estimated_input_tokens = estimated_input_tokens or 1
+        estimated_output_tokens = int(payload.get("max_tokens") or min(estimated_input_tokens, 512))
+        # Pre-reserve from model pricing so budget rules see the pending spend.
+        estimate_model = str(requested_model or "")
+        estimate_target = settings.model_targets.get(estimate_model)
+        if estimate_target is not None:
+            estimated_spend_usd = round(
+                (
+                    estimated_input_tokens * estimate_target.input_cost_per_million
+                    + estimated_output_tokens * estimate_target.output_cost_per_million
+                )
+                / 1_000_000,
+                8,
+            )
+        quota_reservation = await tenant_store.reserve_request(
+            team,
+            input_tokens=estimated_input_tokens,
+            output_tokens=estimated_output_tokens,
+            spend_usd=estimated_spend_usd,
         )
-        requests_last_minute, tokens_today = await tenant_store.usage_snapshot(team)
+        requests_last_minute = quota_reservation.requests_last_minute
+        tokens_today = quota_reservation.tokens_today
+        month_to_date_cost_usd = quota_reservation.month_to_date_cost_usd
     evidence: EnforcementEvidence | None = None
     if governance is not None:
-        evidence = evidence_from_governance(
-            await enforce_governance(
-                request.app.state.client,
-                governance,
-                request,
-                payload,
-                settings.model_targets,
-                requests_last_minute=requests_last_minute,
-                tokens_today=tokens_today,
-            ),
-            enforcement_outcome="executed",
-        )
+        try:
+            evidence = evidence_from_governance(
+                await enforce_governance(
+                    request.app.state.client,
+                    governance,
+                    request,
+                    payload,
+                    settings.model_targets,
+                    requests_last_minute=requests_last_minute,
+                    tokens_today=tokens_today,
+                    month_to_date_cost_usd=month_to_date_cost_usd,
+                    replay_store=getattr(request.app.state, "decision_replay", None),
+                ),
+                enforcement_outcome="executed",
+            )
+        except Exception:
+            if quota_reservation is not None and tenant_store is not None:
+                await tenant_store.refund_reservation(quota_reservation)
+            raise
         runtime_config = getattr(request.app.state, "runtime_config", None)
         if runtime_config is not None and evidence is not None:
             runtime_config.policy.observe(
@@ -302,6 +358,16 @@ async def _chat_completions_admitted(
                         await health_store.record_request(
                             selected_model, success=success, fallback_used=fallback_used
                         )
+                        stream_cost = None
+                        target_for_cost = settings.model_targets.get(selected_model)
+                        if observation.usage is not None and target_for_cost is not None:
+                            stream_cost = request_cost(observation.usage, target_for_cost)
+                        await _reconcile_quota(
+                            tenant_store,
+                            quota_reservation,
+                            usage=observation.usage,
+                            spend_usd=stream_cost,
+                        )
                         observe_completion(
                             requested_model=requested_model,
                             selected_backend=selected_model,
@@ -309,7 +375,7 @@ async def _chat_completions_admitted(
                             success=success,
                             fallback_used=fallback_used,
                             duration_s=observation.duration_ms / 1000,
-                            cost=None,
+                            cost=stream_cost,
                         )
                         span.set_attribute("ai.runtime.stream_outcome", observation.outcome)
                         if observation.ttft_ms is not None:
@@ -335,10 +401,6 @@ async def _chat_completions_admitted(
                         usage_emitter = getattr(request.app.state, "usage_events", None)
                         if usage_emitter is not None:
                             in_tok, out_tok = tokens_from_usage(observation.usage)
-                            stream_cost = None
-                            target_for_cost = settings.model_targets.get(selected_model)
-                            if observation.usage is not None and target_for_cost is not None:
-                                stream_cost = request_cost(observation.usage, target_for_cost)
                             await usage_emitter.emit(
                                 usage_emitter.build(
                                     tenant_id=tenant_id,
@@ -437,6 +499,12 @@ async def _chat_completions_admitted(
         fallback_flag = fallback_used or health_rerouted or cost_rerouted
         health_score, _, _ = await request.app.state.backend_health.routing_signal(model)
         estimated_cost = request_cost(response.get("usage"), settings.model_targets[model])
+        await _reconcile_quota(
+            tenant_store,
+            quota_reservation,
+            usage=response.get("usage"),
+            spend_usd=estimated_cost,
+        )
         headers["x-selected-backend"] = model
         headers["x-routing-reason"] = reason
         headers["x-fallback-used"] = "true" if fallback_flag else "false"

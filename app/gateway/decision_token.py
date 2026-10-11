@@ -128,6 +128,7 @@ async def bind_signed_decision(
     result: dict[str, Any],
     *,
     evaluate_payload: Mapping[str, Any] | None = None,
+    replay_store: object | None = None,
 ) -> dict[str, Any]:
     """Validate optional decision_token against evaluate JSON and local request digest."""
     token = result.get("decision_token")
@@ -196,6 +197,8 @@ async def bind_signed_decision(
                 ),
             )
 
+    local_digest = ""
+    expected_tenant = ""
     if evaluate_payload is not None:
         local_digest = compute_request_digest(evaluate_payload)
         token_digest = _normalize_digest(str(claims.get("request_digest") or ""))
@@ -211,10 +214,13 @@ async def bind_signed_decision(
                     result=result,
                 ),
             )
+        expected_tenant = str(
+            evaluate_payload.get("tenant_id") or evaluate_payload.get("team") or ""
+        ).strip()
         # Optional claim bindings when Control Plane includes them.
         _compare_optional(
             str(claims.get("tenant") or claims.get("tenant_id") or "").strip(),
-            str(evaluate_payload.get("tenant_id") or evaluate_payload.get("team") or "").strip(),
+            expected_tenant,
             field="tenant",
         )
         _compare_optional(
@@ -227,6 +233,37 @@ async def bind_signed_decision(
             str(evaluate_payload.get("model") or "").strip(),
             field="model",
         )
+
+    if replay_store is not None:
+        from app.gateway.decision_replay import derive_jti
+
+        jti = derive_jti(claims=claims, token=str(token))
+        token_tenant = str(claims.get("tenant") or claims.get("tenant_id") or "").strip()
+        token_req = _normalize_digest(str(claims.get("request_digest") or ""))
+        bind_tenant = token_tenant or expected_tenant
+        bind_digest = token_req or local_digest
+        exp = claims.get("exp")
+        try:
+            ttl = max(1, int(exp) - int(time.time())) if exp is not None else 300
+        except (TypeError, ValueError):
+            ttl = 300
+        consume = getattr(replay_store, "consume", None)
+        if consume is not None:
+            accepted = await consume(
+                jti,
+                tenant=bind_tenant,
+                request_digest=bind_digest,
+                ttl_seconds=ttl,
+            )
+            if not accepted:
+                raise HTTPException(
+                    status_code=403,
+                    detail=governance_detail(
+                        code="decision_replayed",
+                        message="signed decision token has already been used",
+                        result=result,
+                    ),
+                )
 
     return _merge_token_claims(result, claims)
 

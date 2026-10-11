@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from fastapi import HTTPException
+from prometheus_client import Gauge
 
 
 def _env_int(name: str, default: int) -> int:
@@ -22,6 +26,26 @@ def _env_float(name: str, default: float) -> float:
     if not raw:
         return default
     return max(0.0, float(raw))
+
+
+CIRCUIT_STATE = Gauge(
+    "gateway_circuit_state",
+    "Circuit breaker state for an upstream backend (0=closed, 1=open, 2=half_open).",
+    ["backend"],
+)
+
+
+class CircuitState(StrEnum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+
+_STATE_GAUGE = {
+    CircuitState.CLOSED: 0,
+    CircuitState.OPEN: 1,
+    CircuitState.HALF_OPEN: 2,
+}
 
 
 @dataclass
@@ -103,7 +127,7 @@ class GlobalAdmissionController:
 
 @dataclass
 class CircuitBreaker:
-    """Simple consecutive-failure breaker for one upstream backend."""
+    """Consecutive-failure breaker with bounded half-open probes."""
 
     failure_threshold: int = field(
         default_factory=lambda: _env_int("GATEWAY_CIRCUIT_FAILURE_THRESHOLD", 5)
@@ -111,31 +135,84 @@ class CircuitBreaker:
     recovery_seconds: float = field(
         default_factory=lambda: _env_float("GATEWAY_CIRCUIT_RECOVERY_SECONDS", 30.0)
     )
+    half_open_max_probes: int = field(
+        default_factory=lambda: max(1, _env_int("GATEWAY_CIRCUIT_HALF_OPEN_PROBES", 1))
+    )
     _failures: dict[str, int] = field(default_factory=dict)
     _opened_at: dict[str, float] = field(default_factory=dict)
+    _state: dict[str, CircuitState] = field(default_factory=dict)
+    _half_open_probes: dict[str, int] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _clock: Callable[[], float] = field(default=time.monotonic)
+
+    def _set_state(self, backend: str, state: CircuitState) -> None:
+        self._state[backend] = state
+        CIRCUIT_STATE.labels(backend=backend).set(_STATE_GAUGE[state])
+
+    def state(self, backend: str) -> CircuitState:
+        with self._lock:
+            return self._state.get(backend, CircuitState.CLOSED)
 
     def allow(self, backend: str) -> bool:
-        opened = self._opened_at.get(backend)
-        if opened is None:
+        with self._lock:
+            state = self._state.get(backend, CircuitState.CLOSED)
+            if state == CircuitState.CLOSED:
+                return True
+            if state == CircuitState.OPEN:
+                opened = self._opened_at.get(backend)
+                if opened is None:
+                    return True
+                if self._clock() - opened < self.recovery_seconds:
+                    return False
+                # Enter half-open and admit the first probe slot.
+                self._set_state(backend, CircuitState.HALF_OPEN)
+                self._half_open_probes[backend] = 1
+                return True
+            # HALF_OPEN: admit up to N concurrent probes.
+            used = self._half_open_probes.get(backend, 0)
+            if used >= self.half_open_max_probes:
+                return False
+            self._half_open_probes[backend] = used + 1
             return True
-        # Half-open probe after recovery window.
-        return time.time() - opened >= self.recovery_seconds
 
     def record_success(self, backend: str) -> None:
-        self._failures[backend] = 0
-        self._opened_at.pop(backend, None)
+        with self._lock:
+            self._failures[backend] = 0
+            self._opened_at.pop(backend, None)
+            self._half_open_probes.pop(backend, None)
+            self._set_state(backend, CircuitState.CLOSED)
 
     def record_failure(self, backend: str) -> None:
-        failures = self._failures.get(backend, 0) + 1
-        self._failures[backend] = failures
-        if failures >= self.failure_threshold:
-            self._opened_at[backend] = time.time()
+        with self._lock:
+            state = self._state.get(backend, CircuitState.CLOSED)
+            if state == CircuitState.HALF_OPEN:
+                # Probe failed — reopen immediately.
+                self._failures[backend] = self.failure_threshold
+                self._opened_at[backend] = self._clock()
+                self._half_open_probes[backend] = 0
+                self._set_state(backend, CircuitState.OPEN)
+                return
+            failures = self._failures.get(backend, 0) + 1
+            self._failures[backend] = failures
+            if failures >= self.failure_threshold:
+                self._opened_at[backend] = self._clock()
+                self._half_open_probes[backend] = 0
+                self._set_state(backend, CircuitState.OPEN)
 
     def snapshot(self) -> dict[str, object]:
-        return {
-            "open": sorted(self._opened_at),
-            "failures": dict(self._failures),
-        }
+        with self._lock:
+            return {
+                "open": sorted(
+                    backend for backend, state in self._state.items() if state == CircuitState.OPEN
+                ),
+                "half_open": sorted(
+                    backend
+                    for backend, state in self._state.items()
+                    if state == CircuitState.HALF_OPEN
+                ),
+                "failures": dict(self._failures),
+                "states": {backend: state.value for backend, state in self._state.items()},
+            }
 
 
 @dataclass

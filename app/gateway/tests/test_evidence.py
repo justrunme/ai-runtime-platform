@@ -103,6 +103,10 @@ async def test_bind_signed_decision_verifies_jws(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("CONTROL_PLANE_DECISION_JWKS_URL", "https://example.test/jwks")
     monkeypatch.setenv("CONTROL_PLANE_DECISION_AUDIENCE", "ai-runtime")
     monkeypatch.setattr("app.gateway.decision_token.PyJWKClient", _Client)
+    monkeypatch.setattr(
+        "app.gateway.decision_token.get_decision_jwks_client",
+        lambda url: _Client(),
+    )
 
     token = jwt.encode(
         {
