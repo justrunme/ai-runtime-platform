@@ -134,6 +134,7 @@ def build_evaluate_payload(
     *,
     requests_last_minute: int | None = None,
     tokens_today: int | None = None,
+    month_to_date_cost_usd: float | None = None,
 ) -> dict[str, Any]:
     input_tokens, output_tokens = _estimate_tokens(payload)
     model = str(payload.get("model") or "unknown")
@@ -143,6 +144,12 @@ def build_evaluate_payload(
     cost_per_request_usd = round(
         (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000,
         6,
+    )
+    # Prefer live tenant spend counter; fall back to static config for cold start.
+    resolved_month_spend = (
+        float(month_to_date_cost_usd)
+        if month_to_date_cost_usd is not None
+        else float(config.default_month_to_date_cost_usd)
     )
     identity = resolve_workload_identity(
         request,
@@ -203,7 +210,7 @@ def build_evaluate_payload(
         "cost_per_request_usd": cost_per_request_usd,
         # Server-derived cost/quota signals — never accept client overrides for policy.
         "cost_per_hour_usd": float(config.default_cost_per_hour_usd),
-        "month_to_date_cost_usd": float(config.default_month_to_date_cost_usd),
+        "month_to_date_cost_usd": resolved_month_spend,
         "forecast_monthly_cost_usd": float(config.default_forecast_monthly_cost_usd),
         "sensitive_data": sensitive_data,
         "tool_access": tool_access,
@@ -273,6 +280,8 @@ async def enforce_governance(
     *,
     requests_last_minute: int | None = None,
     tokens_today: int | None = None,
+    month_to_date_cost_usd: float | None = None,
+    replay_store: object | None = None,
 ) -> dict[str, Any] | None:
     """Call the control plane and reject the request when governance blocks it."""
     if not config.enabled:
@@ -285,6 +294,7 @@ async def enforce_governance(
         model_targets,
         requests_last_minute=requests_last_minute,
         tokens_today=tokens_today,
+        month_to_date_cost_usd=month_to_date_cost_usd,
     )
     evaluate_url = f"{config.control_plane_url}/governance/evaluate"
     headers: dict[str, str] = {}
@@ -332,7 +342,11 @@ async def enforce_governance(
     from app.gateway.decision_token import bind_signed_decision
     from app.gateway.evidence import apply_evidence_headers, evidence_from_governance
 
-    result = await bind_signed_decision(result, evaluate_payload=body)
+    store = replay_store
+    if store is None:
+        store = getattr(getattr(request, "app", None), "state", None)
+        store = getattr(store, "decision_replay", None) if store is not None else None
+    result = await bind_signed_decision(result, evaluate_payload=body, replay_store=store)
     verdict = str(result.get("final_verdict", "unknown"))
     GOVERNANCE_DECISIONS.labels(verdict=verdict, team=body["team"]).inc()
 

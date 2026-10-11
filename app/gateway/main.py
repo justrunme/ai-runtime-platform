@@ -30,6 +30,7 @@ from app.gateway.config import (
     RoutingPolicy,
     RoutingWeights,
 )
+from app.gateway.decision_replay import create_decision_replay_store
 from app.gateway.decisions import create_decision_store
 from app.gateway.errors import register_exception_handlers
 from app.gateway.governance import GovernanceConfig
@@ -160,6 +161,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.decision_store = create_decision_store(settings.redis_url)
     app.state.governance = GovernanceConfig.from_environment()
     app.state.tenant_attribution = create_tenant_store(settings.redis_url)
+    app.state.decision_replay = create_decision_replay_store(settings.redis_url)
     health_task = asyncio.create_task(
         health_probe_loop(app.state.backend_health, settings.health_interval_seconds)
     )
@@ -186,6 +188,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         tenant_store = getattr(app.state, "tenant_attribution", None)
         if tenant_store is not None:
             await tenant_store.aclose()
+        decision_replay = getattr(app.state, "decision_replay", None)
+        if decision_replay is not None:
+            await decision_replay.aclose()
         await app.state.decision_store.aclose()
         await app.state.client.aclose()
 
