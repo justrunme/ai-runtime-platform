@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Fleet-wide tenant concurrency admission via Redis distributed semaphore (Lua acquire,
+  lease TTL + renewal, fencing token, pod-death reclaim on expiry)
+- Per-tenant `redisUnavailablePolicy`: `fail_closed` (default), `degraded`, `fail_open`
+- Admission metrics (`gateway_admission_inflight`, acquire latency, rejections, expired leases)
+- Admission status on `/readyz` and `/v1/runtime/status`
+- Platform e2e proofs: multi-replica limit, SIGKILL lease recovery, Redis fail-closed `503`
+
+### Changed
+
+- Tenant policy prefers `maxConcurrentRequests` / `maxQueuedRequests` (legacy `*PerReplica` aliases kept)
+- Docs no longer describe concurrency limits as per-replica-only when Redis is configured
+
 ## [2.4.0] - 2026-10-10
 
 Signed Control Plane compatibility matrix and CI hygiene.

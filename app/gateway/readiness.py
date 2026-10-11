@@ -41,6 +41,27 @@ async def build_readiness_report(app: FastAPI) -> tuple[bool, dict[str, Any]]:
         "configured": redis_configured,
     }
 
+    admission = getattr(app.state, "admission", None)
+    admission_status: dict[str, Any] = {"ok": True, "configured": admission is not None}
+    if admission is not None and hasattr(admission, "status"):
+        admission_status.update(admission.status())
+        if getattr(admission, "redis_configured", False) and hasattr(admission, "ping"):
+            try:
+                admission_redis_ok = bool(await admission.ping())
+                admission_status["redis_ok"] = admission_redis_ok
+                # Fleet admission uses the same Redis; surface failures without
+                # double-failing readiness when shared state is already required.
+                if redis_configured:
+                    redis_ok = redis_ok and admission_redis_ok
+                    checks["redis"]["ok"] = redis_ok
+            except Exception as error:  # noqa: BLE001
+                admission_status["ok"] = False
+                admission_status["error"] = str(error)
+                if redis_configured:
+                    redis_ok = False
+                    checks["redis"]["ok"] = False
+    checks["admission"] = admission_status
+
     governance: GovernanceConfig | None = getattr(app.state, "governance", None)
     control_plane_ok = True
     control_plane_required = bool(governance and governance.enabled and not governance.fail_open)

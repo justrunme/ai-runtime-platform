@@ -1,0 +1,25 @@
+# Fleet admission overlay: short lease TTL + tight per-tenant limits for e2e proofs.
+services:
+  gateway-a:
+    environment:
+      ADMISSION_LEASE_TTL_SECONDS: "3"
+      ADMISSION_LEASE_RENEW_INTERVAL_SECONDS: "1"
+      TENANT_RUNTIME_POLICY: >-
+        {"default":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"},
+         "tenants":{
+           "finance":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"},
+           "research":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"},
+           "platform":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"}
+         }}
+
+  gateway-b:
+    environment:
+      ADMISSION_LEASE_TTL_SECONDS: "3"
+      ADMISSION_LEASE_RENEW_INTERVAL_SECONDS: "1"
+      TENANT_RUNTIME_POLICY: >-
+        {"default":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"},
+         "tenants":{
+           "finance":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"},
+           "research":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"},
+           "platform":{"maxConcurrentRequests":2,"maxQueuedRequests":0,"redisUnavailablePolicy":"fail_closed"}
+         }}

@@ -3,7 +3,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-COMPOSE=(docker compose -f "$ROOT/docker-compose.yaml")
+COMPOSE=(
+  docker compose
+  -f "$ROOT/docker-compose.yaml"
+  -f "$ROOT/docker-compose.admission.yaml"
+)
 A="${GATEWAY_A:-http://127.0.0.1:18080}"
 B="${GATEWAY_B:-http://127.0.0.1:18081}"
 OPENAI_STATS="${OPENAI_STATS:-http://127.0.0.1:18082/stats}"
@@ -103,16 +107,91 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-echo "== Redis unavailable → /readyz 503 =="
+echo "== fleet admission: global limit across replicas =="
+# Limit is 2 fleet-wide for tenant "platform". Hold two slow streams, then expect 429.
+rm -f /tmp/e2e-adm-hold-a /tmp/e2e-adm-hold-b /tmp/e2e-adm-reject.json
+curl -sS -N "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream hold-a"}]}' \
+  "$A/v1/chat/completions" >/tmp/e2e-adm-hold-a &
+hold_a_pid=$!
+curl -sS -N "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream hold-b"}]}' \
+  "$B/v1/chat/completions" >/tmp/e2e-adm-hold-b &
+hold_b_pid=$!
+sleep 2
+reject_code="$(curl -sS -o /tmp/e2e-adm-reject.json -w '%{http_code}' "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"should shed"}]}' \
+  "$A/v1/chat/completions" || true)"
+[[ "$reject_code" == "429" ]] || {
+  echo "expected fleet 429 got $reject_code" >&2
+  cat /tmp/e2e-adm-reject.json >&2 || true
+  kill "$hold_a_pid" "$hold_b_pid" 2>/dev/null || true
+  exit 1
+}
+python3 -c 'import json; b=json.load(open("/tmp/e2e-adm-reject.json")); assert b["error"]["code"]=="tenant_concurrency_exceeded"'
+kill "$hold_a_pid" "$hold_b_pid" 2>/dev/null || true
+wait "$hold_a_pid" "$hold_b_pid" 2>/dev/null || true
+# Allow disconnect finalizers or lease TTL to free capacity.
+sleep 4
+
+echo "== fleet admission: SIGKILL mid-stream recovers after lease TTL =="
+curl -sS -N "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream kill-me"}]}' \
+  "$A/v1/chat/completions" >/tmp/e2e-adm-kill-stream &
+kill_stream_pid=$!
+sleep 1
+"${COMPOSE[@]}" kill -s SIGKILL gateway-a
+kill "$kill_stream_pid" 2>/dev/null || true
+wait "$kill_stream_pid" 2>/dev/null || true
+# Lease TTL is 3s; wait for expiry then fill the fleet limit again from gateway-b.
+sleep 4
+curl -sS -N "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream after-kill-1"}]}' \
+  "$B/v1/chat/completions" >/tmp/e2e-adm-after-1 &
+after1_pid=$!
+curl -sS -N "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream after-kill-2"}]}' \
+  "$B/v1/chat/completions" >/tmp/e2e-adm-after-2 &
+after2_pid=$!
+sleep 2
+over_code="$(curl -sS -o /tmp/e2e-adm-over.json -w '%{http_code}' "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"over limit"}]}' \
+  "$B/v1/chat/completions" || true)"
+[[ "$over_code" == "429" ]] || {
+  echo "expected 429 after recovery fill, got $over_code" >&2
+  cat /tmp/e2e-adm-over.json >&2 || true
+  kill "$after1_pid" "$after2_pid" 2>/dev/null || true
+  exit 1
+}
+kill "$after1_pid" "$after2_pid" 2>/dev/null || true
+wait "$after1_pid" "$after2_pid" 2>/dev/null || true
+"${COMPOSE[@]}" start gateway-a
+for _ in $(seq 1 30); do
+  curl -fsS "$A/readyz" >/dev/null && break
+  sleep 2
+done
+# Reclaim any leases left by SIGKILL / client abort.
+sleep 4
+
+echo "== Redis unavailable → /readyz 503 + admission fail-closed 503 =="
 "${COMPOSE[@]}" stop redis
 sleep 2
 ready_code="$(curl -sS -o /tmp/e2e-ready-down.json -w '%{http_code}' "$B/readyz" || true)"
+adm_code="$(curl -sS -o /tmp/e2e-adm-redis-down.json -w '%{http_code}' "${AUTH[@]}" \
+  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"hi"}]}' \
+  "$B/v1/chat/completions" || true)"
 "${COMPOSE[@]}" start redis
 for _ in $(seq 1 30); do
   curl -fsS "$B/readyz" >/dev/null && break
   sleep 2
 done
 [[ "$ready_code" == "503" ]] || { echo "expected readyz 503, got $ready_code" >&2; exit 1; }
+[[ "$adm_code" == "503" ]] || {
+  echo "expected admission 503 when Redis down, got $adm_code" >&2
+  cat /tmp/e2e-adm-redis-down.json >&2 || true
+  exit 1
+}
+python3 -c 'import json; b=json.load(open("/tmp/e2e-adm-redis-down.json")); assert b["error"]["code"]=="admission_store_unavailable", b'
 
 echo "== Control Plane unavailable → fail-closed 503 =="
 "${COMPOSE[@]}" stop mock-control-plane

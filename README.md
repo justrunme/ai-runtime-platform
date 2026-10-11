@@ -493,7 +493,6 @@ The project is now maintenance-oriented.
 | --- | --- |
 | Actual GitOps / Argo sync in verify | Control Plane reports `gitops_sync: not_checked` |
 | Usage event queue after hard pod loss | Best-effort, in-memory buffer (not a billing ledger) |
-| Fleet-wide concurrency admission | Per-replica limits (Redis shares health/attribution, not distributed semaphores) |
 | MCP session state | Process-local — use sticky sessions or a shared store for multi-replica |
 | Tenant upstream credentials | Experimental / reserved (`upstreamCredentialRef`) |
 | Billing / chargeback ledger | Not implemented — cost stays attribution-grade |

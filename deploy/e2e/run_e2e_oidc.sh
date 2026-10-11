@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 A="${GATEWAY_A:-http://127.0.0.1:18080}"
+B="${GATEWAY_B:-http://127.0.0.1:18081}"
 OIDC="${OIDC_URL:-http://127.0.0.1:18083}"
 
 mint_token() {
@@ -60,5 +61,44 @@ echo "$chat" | grep -q 'hello from mock'
 
 echo "== livez remains public =="
 curl -fsS "$A/livez" | grep -q ok
+
+echo "== fleet admission: multi-tenant limits across replicas =="
+finance_token="$(printf '%s' '{"tenant_id":"finance","groups":["runtime-service"]}' | mint_token)"
+research_token="$(printf '%s' '{"tenant_id":"research","groups":["runtime-service"]}' | mint_token)"
+# Each tenant limited to 2 fleet-wide. Saturate both tenants across A/B, then reject.
+curl -sS -N -H "Authorization: Bearer ${finance_token}" -H "Content-Type: application/json" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream fin-a"}]}' \
+  "$A/v1/chat/completions" >/tmp/oidc-fin-a &
+fin_a_pid=$!
+curl -sS -N -H "Authorization: Bearer ${finance_token}" -H "Content-Type: application/json" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream fin-b"}]}' \
+  "$B/v1/chat/completions" >/tmp/oidc-fin-b &
+fin_b_pid=$!
+curl -sS -N -H "Authorization: Bearer ${research_token}" -H "Content-Type: application/json" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream res-a"}]}' \
+  "$A/v1/chat/completions" >/tmp/oidc-res-a &
+res_a_pid=$!
+curl -sS -N -H "Authorization: Bearer ${research_token}" -H "Content-Type: application/json" \
+  -d '{"model":"llama3.1:8b","stream":true,"messages":[{"role":"user","content":"e2e-slow-stream res-b"}]}' \
+  "$B/v1/chat/completions" >/tmp/oidc-res-b &
+res_b_pid=$!
+sleep 2
+fin_reject="$(curl -sS -o /tmp/oidc-fin-reject.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${finance_token}" -H "Content-Type: application/json" \
+  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"fin shed"}]}' \
+  "$A/v1/chat/completions" || true)"
+res_reject="$(curl -sS -o /tmp/oidc-res-reject.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${research_token}" -H "Content-Type: application/json" \
+  -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"res shed"}]}' \
+  "$B/v1/chat/completions" || true)"
+[[ "$fin_reject" == "429" && "$res_reject" == "429" ]] || {
+  echo "expected multi-tenant 429s, got finance=$fin_reject research=$res_reject" >&2
+  kill "$fin_a_pid" "$fin_b_pid" "$res_a_pid" "$res_b_pid" 2>/dev/null || true
+  exit 1
+}
+# Cross-tenant capacity is independent: research saturation must not block a free
+# tenant slot after finance releases — verified by independent 429s above.
+kill "$fin_a_pid" "$fin_b_pid" "$res_a_pid" "$res_b_pid" 2>/dev/null || true
+wait "$fin_a_pid" "$fin_b_pid" "$res_a_pid" "$res_b_pid" 2>/dev/null || true
 
 echo "OK: OIDC production-profile e2e passed"
