@@ -211,7 +211,12 @@ async def _chat_completions_admitted(
         tokens_today = quota_reservation.tokens_today
         month_to_date_cost_usd = quota_reservation.month_to_date_cost_usd
     evidence: EnforcementEvidence | None = None
-    if governance is not None:
+    governance_active = (
+        governance is not None
+        and getattr(governance, "mode", "enforce") == "enforce"
+        and governance.enabled
+    )
+    if governance_active:
         try:
             evidence = evidence_from_governance(
                 await enforce_governance(

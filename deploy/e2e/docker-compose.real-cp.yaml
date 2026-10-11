@@ -19,6 +19,7 @@ services:
   gateway-a:
     environment:
       CONTROL_PLANE_URL: http://control-plane:8080
+      GOVERNANCE_MODE: enforce
       GOVERNANCE_DEFAULT_ENVIRONMENT: production
       GOVERNANCE_DEFAULT_COST_PER_HOUR_USD: "0.18"
       GOVERNANCE_DEFAULT_MONTH_TO_DATE_COST_USD: "100"
@@ -30,6 +31,7 @@ services:
   gateway-b:
     environment:
       CONTROL_PLANE_URL: http://control-plane:8080
+      GOVERNANCE_MODE: enforce
       GOVERNANCE_DEFAULT_ENVIRONMENT: production
       GOVERNANCE_DEFAULT_COST_PER_HOUR_USD: "0.18"
       GOVERNANCE_DEFAULT_MONTH_TO_DATE_COST_USD: "100"

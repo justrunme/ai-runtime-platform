@@ -57,6 +57,7 @@ services:
       REQUIRE_SHARED_STATE: "true"
       REDIS_URL: redis://redis:6379/0
       CONTROL_PLANE_URL: http://mock-control-plane:8080
+      GOVERNANCE_MODE: enforce
       GOVERNANCE_ENFORCEMENT: "true"
       GOVERNANCE_FAIL_OPEN: "false"
       MODEL_TARGETS: '{"llama3.1:8b":{"url":"http://mock-openai:8000/v1","input_cost_per_million":0,"output_cost_per_million":0,"health_path":"/health","provider":"ollama"}}'

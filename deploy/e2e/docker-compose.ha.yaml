@@ -52,6 +52,7 @@ services:
   gateway-a:
     environment:
       CONTROL_PLANE_URL: http://control-plane:8080
+      GOVERNANCE_MODE: enforce
       GATEWAY_CONFIG_GENERATION: "7"
       GATEWAY_INSTANCE_ID: gateway-a
       RUNTIME_VERIFY_PRIVATE_KEY_B64: ${RUNTIME_VERIFY_PRIVATE_KEY_B64}
@@ -68,6 +69,7 @@ services:
   gateway-b:
     environment:
       CONTROL_PLANE_URL: http://control-plane-b:8080
+      GOVERNANCE_MODE: enforce
       GATEWAY_CONFIG_GENERATION: "7"
       GATEWAY_INSTANCE_ID: gateway-b
       RUNTIME_VERIFY_PRIVATE_KEY_B64: ${RUNTIME_VERIFY_PRIVATE_KEY_B64}

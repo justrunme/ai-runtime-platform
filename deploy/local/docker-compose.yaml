@@ -40,6 +40,8 @@ services:
       OLLAMA_MODELS: ${OLLAMA_MODELS:-qwen2.5:1.5b}
       MODEL_TARGETS: "{}"
       MODEL_ROUTES: ${MODEL_ROUTES:-{}}
+      # Local demo has no Control Plane; disable explicitly (default is enforce).
+      GOVERNANCE_MODE: disabled
     ports:
       - "8080:8080"
     read_only: true

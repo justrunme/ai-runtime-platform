@@ -31,7 +31,11 @@ def _allow_ungoverned_mcp() -> bool:
 @router.get("/mcp/tools")
 async def mcp_tools(request: Request) -> JSONResponse:
     governance: GovernanceConfig | None = request.app.state.governance
-    if governance is None:
+    if (
+        governance is None
+        or getattr(governance, "mode", "enforce") == "disabled"
+        or not governance.control_plane_url
+    ):
         raise HTTPException(
             status_code=503,
             detail={"error": "CONTROL_PLANE_URL is required for MCP tool catalog"},
@@ -112,7 +116,11 @@ async def mcp_server_cancel(server_name: str, request: Request) -> dict[str, Any
 async def intent_resolve(request: Request) -> JSONResponse:
     payload = await request.json()
     governance: GovernanceConfig | None = request.app.state.governance
-    if governance is None:
+    if (
+        governance is None
+        or getattr(governance, "mode", "enforce") == "disabled"
+        or not governance.control_plane_url
+    ):
         raise HTTPException(
             status_code=503,
             detail={"error": "CONTROL_PLANE_URL is required for intent resolution"},
@@ -134,7 +142,12 @@ async def mcp_tool_call(tool_name: str, request: Request) -> JSONResponse:
     governance: GovernanceConfig | None = request.app.state.governance
     governance_result = None
     server_name = str(payload.get("mcp_server") or payload.get("server") or "").strip()
-    if server_name and governance is None and not _allow_ungoverned_mcp():
+    governance_usable = (
+        governance is not None
+        and getattr(governance, "mode", "enforce") == "enforce"
+        and bool(governance.control_plane_url)
+    )
+    if server_name and not governance_usable and not _allow_ungoverned_mcp():
         raise HTTPException(
             status_code=503,
             detail={
@@ -148,7 +161,7 @@ async def mcp_tool_call(tool_name: str, request: Request) -> JSONResponse:
                 }
             },
         )
-    if governance is not None:
+    if governance is not None and getattr(governance, "mode", "enforce") == "enforce":
         governance_result = await enforce_tool_governance(
             request.app.state.client,
             governance,

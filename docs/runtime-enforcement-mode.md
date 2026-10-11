@@ -69,13 +69,15 @@ curl -sS -X POST http://127.0.0.1:8090/mcp/tools/jira-read/call \
 ## Enable enforcement
 
 ```bash
+export GOVERNANCE_MODE=enforce
 export CONTROL_PLANE_URL=http://ai-control-plane:8080
 ```
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `CONTROL_PLANE_URL` | unset | Base URL of the control plane API |
-| `GOVERNANCE_ENFORCEMENT` | `true` | Set `false` to keep the URL configured but skip checks |
+| `GOVERNANCE_MODE` | `enforce` | `enforce` requires `CONTROL_PLANE_URL` (readiness fails / governed requests return `503` when missing). `disabled` must be set explicitly for demos without a control plane; exposed on `/health` and `gateway_governance_mode`. |
+| `CONTROL_PLANE_URL` | unset | Base URL of the control plane API (required when mode is `enforce`) |
+| `GOVERNANCE_ENFORCEMENT` | `true` | Set `false` to keep the URL configured but skip evaluate calls (mode still `enforce`) |
 | `GOVERNANCE_FAIL_OPEN` | `false` | Allow inference when the control plane is unavailable |
 | `GOVERNANCE_TIMEOUT_SECONDS` | `2.0` | HTTP timeout for governance evaluation |
 | `OIDC_JWT_VERIFY` | `false` | Fail-closed JWT authentication |
@@ -103,7 +105,10 @@ export CONTROL_PLANE_URL=http://ai-control-plane:8080
 
 ```text
 gateway_governance_decisions_total{verdict="allow|block|approval_required|control_plane_error|fail_open", team="..."}
+gateway_governance_mode{mode="enforce|disabled"}  # 1 for the active mode
 ```
+
+`/health` and `/healthz` include `governance_mode`.
 
 ## Local demo
 
@@ -113,7 +118,10 @@ cd ../ai-infra-control-plane
 make run
 
 # Terminal 2: gateway
+export GOVERNANCE_MODE=enforce
 export CONTROL_PLANE_URL=http://127.0.0.1:8080
 export IDENTITY_TRUSTED_PROXY=true
 uvicorn app.gateway.main:app --port 8090
 ```
+
+Without a control plane (compose local demo), set `GOVERNANCE_MODE=disabled` explicitly. Leaving the URL unset under the default `enforce` mode fails readiness.

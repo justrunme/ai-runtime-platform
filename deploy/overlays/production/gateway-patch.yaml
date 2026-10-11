@@ -25,10 +25,13 @@ spec:
               value: "true"
             - name: OIDC_JWT_REQUIRE_ISS_AUD
               value: "true"
+            - name: GOVERNANCE_MODE
+              value: enforce
             - name: GOVERNANCE_ENFORCEMENT
               value: "true"
             - name: GOVERNANCE_FAIL_OPEN
               value: "false"
+            # Required for GOVERNANCE_MODE=enforce (not optional).
             - name: CONTROL_PLANE_URL
               valueFrom:
                 secretKeyRef:

@@ -51,8 +51,12 @@ spec:
               value: http://otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_SERVICE_NAME
               value: ai-runtime-gateway
-            # Supply a comma-separated key list to enable request authentication.
-            # The deployment stays open until this secret is created.
+            # Auth secret is optional in the base (local/single-node may run open).
+            # For GOVERNANCE_MODE=enforce with API-key auth (GATEWAY_PROFILE=internal),
+            # create Secret ai-runtime-gateway-auth with key api-keys and remove
+            # optional:true (or use overlays/production OIDC instead of API keys).
+            # CONTROL_PLANE_URL must be set when GOVERNANCE_MODE=enforce; see
+            # overlays/production (required secretKeyRef) and docs/runtime-enforcement-mode.md.
             - name: GATEWAY_API_KEYS
               valueFrom:
                 secretKeyRef:
