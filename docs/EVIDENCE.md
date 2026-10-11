@@ -18,11 +18,12 @@ and [docs/compatibility.md](compatibility.md) plus the linked runs. No invented 
 | OIDC platform e2e | Tested in CI | Job **platform-e2e-oidc** on main CI | Demo OIDC — not enterprise IdP certification | [38118081980](https://github.com/justrunme/ai-runtime-platform/actions/runs/38118081980) | Auth failures fail the job |
 | Signed Control Plane compatibility matrix (cosign verify + e2e) | Tested in CI | Real Control Plane e2e workflow; matrix in `docs/compatibility.md` | Matrix pins listed CP tags/digests at last matrix update; Runtime line shown as 2.3.x in that file even when Runtime release tag moves — read the matrix file for exact pins | [Run 38053041482](https://github.com/justrunme/ai-runtime-platform/actions/runs/38053041482) · digests in [docs/compatibility.md](compatibility.md) (e.g. CP 2.4.0 `sha256:608f7758bd29979c81db146b9d76b83b6a7b906446d31c15dddbabd8c0a13274`) | Signature or e2e fail → matrix row fails |
 | vLLM / KServe / KEDA production serving at scale | Reference implementation | Helm chart + example manifests (`charts/vllm-runtime`, `deploy/kserve`, `deploy/keda`) | Chart defaults are a starting profile; no GPU soak numbers in `docs/results.*` | OCI chart publish covered in release path; no kind GPU RPS claims here | — |
-| Billing ledger / fleet-wide concurrency / automated canary promotion | Not yet | Called out in maturity docs | Out of Supported scope | — | — |
+| Fleet-wide Redis admission (lease fencing) | Tested in CI | PR [#98](https://github.com/justrunme/ai-runtime-platform/pull/98): `test_fleet_admission` (fakeredis atomicity/fencing/expiry/unavailable policies) + **platform-e2e** / **platform-e2e-oidc** with `deploy/e2e/docker-compose.admission.yaml` (2 replicas share global limit; SIGKILL mid-stream recovers after TTL; Redis down → `503 admission_store_unavailable`) | Compose Redis on CI runner — not multi-region global admission | Main CI after #98: [38121712037](https://github.com/justrunme/ai-runtime-platform/actions/runs/38121712037) · SHA `0bbc9165d1a212e9e1dba8c510eccac1b7694d6c` · jobs platform-e2e / platform-e2e-oidc / python | Acquire must be atomic; expired leases free capacity; fail_closed default when Redis unavailable |
+| Billing ledger / automated canary promotion | Not yet | Called out in maturity docs | Out of Supported scope | — | — |
 
 ## Not proven / out of scope
 
-- Multi-region gateway mesh and global admission
+- Multi-region gateway mesh / cross-region global admission (fleet Redis admission is compose/CI-proved only)
 - Production GPU capacity planning (vLLM chart is a template)
 - Billing / chargeback ledger
 - Treating compose golden-path seconds as production p99 latency
