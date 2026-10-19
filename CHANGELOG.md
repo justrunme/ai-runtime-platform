@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-19
+
 ### Added
 
 - Inference Budget Guard on the chat admission path: atomic reserve (tokens × price)
@@ -212,5 +214,6 @@ Trust boundary and Control Plane approval contract.
 
 Initial Execution Plane gateway and demos.
 
-[Unreleased]: https://github.com/justrunme/ai-runtime-platform/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/justrunme/ai-runtime-platform/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/justrunme/ai-runtime-platform/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/justrunme/ai-runtime-platform/compare/v2.3.0...v2.4.0
