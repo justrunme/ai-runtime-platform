@@ -22,6 +22,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app import __version__
 from app.gateway.admission import create_admission_controller
 from app.gateway.auth import PUBLIC_PATHS, install_authentication, request_is_authorized
+from app.gateway.budget_guard import create_budget_guard
+from app.gateway.budget_policy import BudgetPolicyError
 from app.gateway.config import (
     GatewaySettings,
     ModelRoute,
@@ -153,6 +155,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         load_tenant_policy_bundle(),
         redis_url=settings.redis_url,
     )
+    app.state.budget_policy_error = None
+    try:
+        app.state.budget_guard = create_budget_guard(redis_url=settings.redis_url)
+    except BudgetPolicyError as error:
+        app.state.budget_guard = None
+        app.state.budget_policy_error = error.message
     app.state.global_admission = GlobalAdmissionController()
     app.state.circuit_breaker = CircuitBreaker()
     app.state.retry_budget = RetryBudget()
@@ -197,6 +205,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         admission = getattr(app.state, "admission", None)
         if admission is not None and hasattr(admission, "aclose"):
             await admission.aclose()
+        budget_guard = getattr(app.state, "budget_guard", None)
+        if budget_guard is not None and hasattr(budget_guard, "aclose"):
+            await budget_guard.aclose()
         await app.state.decision_store.aclose()
         await app.state.client.aclose()
 

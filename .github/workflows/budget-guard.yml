@@ -1,0 +1,90 @@
+name: Budget guard
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/**']
+
+permissions:
+  contents: read
+
+jobs:
+  budget-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        # redis:7.4-alpine, pinned by digest
+        image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      # Real Redis server: multiprocess concurrency tests must run, never skip.
+      BUDGET_GUARD_REDIS_URL: redis://localhost:6379/15
+      BUDGET_GUARD_REQUIRE_REDIS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e '.[dev]'
+
+      - name: Lint budget modules
+        run: |
+          python -m ruff check app/gateway/budget_guard.py app/gateway/budget_policy.py \
+            app/gateway/budget_evidence.py app/gateway/tests/test_budget_guard.py \
+            scripts/generate_budget_evidence.py
+          python -m ruff format --check app/gateway/budget_guard.py app/gateway/budget_policy.py \
+            app/gateway/budget_evidence.py app/gateway/tests/test_budget_guard.py \
+            scripts/generate_budget_evidence.py
+
+      - name: Run suite and write evidence
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: python scripts/generate_budget_evidence.py
+
+      - name: Assert evidence artifacts
+        run: |
+          test -f docs/results.json
+          test -f docs/EVIDENCE.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("docs/results.json").read_text())
+          bg = data["budget_guard"]
+          assert bg["false_deny_count_legitimate"] == 0
+          conc = bg["concurrency"]
+          assert conc["overspend_events"] == 0
+          real = conc["real_redis_multiprocess"]
+          assert real["rounds"] >= 10, real
+          assert real["allows_per_round"] == [real["expected_allows_per_round"]], real
+          settle = conc["real_redis_multiprocess_settle"]
+          assert settle["rounds"] >= 10, settle
+          assert settle["exact_committed_rounds"] == settle["rounds"], settle
+          assert settle["leaked_reserved_micros"] == 0, settle
+          assert bg["scenario_count"] >= 10
+          for row in bg["envelopes"]:
+              for key in (
+                  "schema_version", "policy_version", "policy_sha256",
+                  "decision", "reason", "trace_id", "commit_sha", "timestamp",
+              ):
+                  assert key in row, key
+              assert row["decision"] in {"ALLOW", "DENY"}
+          print("budget_guard evidence ok", bg["scenario_count"], "envelopes")
+          PY
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: budget-guard-evidence
+          path: |
+            docs/results.json
+            docs/EVIDENCE.md
+            docs/budget_guard_results.json

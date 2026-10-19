@@ -1,0 +1,31 @@
+{
+  "version": "budget-guard-1.0",
+  "enabled": true,
+  "requireStore": true,
+  "default": {
+    "budgetUsd": 10.0,
+    "windowSeconds": 3600,
+    "softWarningRatio": 0.8,
+    "reservationTtlSeconds": 120
+  },
+  "tenants": {
+    "finance": {
+      "budgetUsd": 1.0,
+      "windowSeconds": 3600,
+      "softWarningRatio": 0.75,
+      "reservationTtlSeconds": 120,
+      "apiKeys": {
+        "demo-key": {
+          "budgetUsd": 0.25,
+          "windowSeconds": 3600,
+          "softWarningRatio": 0.9,
+          "reservationTtlSeconds": 120
+        }
+      }
+    }
+  },
+  "prices": {
+    "qwen": { "inputPerMillion": 0.5, "outputPerMillion": 1.0 },
+    "*": { "inputPerMillion": 1.0, "outputPerMillion": 2.0 }
+  }
+}

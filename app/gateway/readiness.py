@@ -62,6 +62,30 @@ async def build_readiness_report(app: FastAPI) -> tuple[bool, dict[str, Any]]:
                     checks["redis"]["ok"] = False
     checks["admission"] = admission_status
 
+    budget_guard = getattr(app.state, "budget_guard", None)
+    budget_policy_error = getattr(app.state, "budget_policy_error", None)
+    budget_status: dict[str, Any] = {
+        "ok": budget_policy_error is None,
+        "configured": budget_guard is not None or bool(budget_policy_error),
+    }
+    if budget_policy_error:
+        budget_status["ok"] = False
+        budget_status["error"] = budget_policy_error
+    elif budget_guard is not None and hasattr(budget_guard, "status"):
+        budget_status.update(budget_guard.status())
+        if (
+            getattr(budget_guard, "enabled", False)
+            and getattr(budget_guard, "_redis", None) is not None
+        ):
+            # Redis-backed guard: surface store health without failing readiness
+            # unless shared state is already required (same pattern as admission).
+            redis_ok_flag = getattr(budget_guard, "_redis_ok", True)
+            budget_status["redis_ok"] = redis_ok_flag
+            if redis_configured and not redis_ok_flag:
+                redis_ok = False
+                checks["redis"]["ok"] = False
+    checks["budget_guard"] = budget_status
+
     governance: GovernanceConfig | None = getattr(app.state, "governance", None)
     governance_mode = (
         getattr(governance, "mode", "disabled") if governance is not None else "disabled"

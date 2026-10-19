@@ -13,6 +13,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
 
 from app.gateway.admission import AdmissionLease
+from app.gateway.budget_guard import (
+    BudgetReservation,
+    InferenceBudgetGuard,
+    decision_to_http_exception,
+)
+from app.gateway.budget_policy import BudgetPolicyError, load_inference_budget_policy
 from app.gateway.config import GatewaySettings
 from app.gateway.errors import api_error, raise_api_error
 from app.gateway.evaluations import (
@@ -75,6 +81,98 @@ async def _reconcile_quota(
         actual_output_tokens=out_tok,
         actual_spend_usd=actual_spend,
     )
+
+
+async def _settle_budget(
+    budget_reservation: BudgetReservation | None,
+    *,
+    spend_usd: float | None,
+) -> None:
+    """Settle with actual priced usage; unknown usage (None) is charged at the estimate."""
+    if budget_reservation is None:
+        return
+    await budget_reservation.settle(spend_usd)
+
+
+def _requested_output_tokens(payload: dict, default: int) -> int:
+    """Best-effort output-token cap from the request; malformed values use the default."""
+    for key in ("max_completion_tokens", "max_tokens"):
+        raw = payload.get(key)
+        if raw is None or isinstance(raw, bool):
+            continue
+        try:
+            value = int(raw)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if value > 0:
+            return value
+    return default
+
+
+async def _reserve_inference_budget(
+    request: Request,
+    *,
+    tenant_id: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+) -> BudgetReservation | None:
+    """Reserve estimated inference cost before upstream execution. Fail closed."""
+    policy_error = getattr(request.app.state, "budget_policy_error", None)
+    if policy_error:
+        raise api_error(
+            503,
+            code="budget_policy_invalid",
+            message=f"inference budget policy is malformed; fail-closed: {policy_error}",
+            error_type="api_error",
+            headers={
+                "Retry-After": "1",
+                "X-AI-Budget-Decision": "DENY",
+                "X-AI-Budget-Reason": "malformed_policy",
+            },
+        )
+
+    guard: InferenceBudgetGuard | None = getattr(request.app.state, "budget_guard", None)
+    if guard is None:
+        # Feature may be enabled after process start via env in tests.
+        try:
+            policy = load_inference_budget_policy()
+        except BudgetPolicyError as error:
+            raise api_error(
+                503,
+                code="budget_policy_invalid",
+                message=f"inference budget policy is malformed; fail-closed: {error.message}",
+                error_type="api_error",
+                headers={
+                    "Retry-After": "1",
+                    "X-AI-Budget-Decision": "DENY",
+                    "X-AI-Budget-Reason": "malformed_policy",
+                },
+            ) from error
+        if policy is None:
+            return None
+        guard = InferenceBudgetGuard(policy)
+        request.app.state.budget_guard = guard
+
+    if not guard.enabled:
+        return None
+
+    api_key = request.headers.get("x-api-key") or request.headers.get("x-ai-api-key")
+    decision, reservation = await guard.reserve(
+        tenant_id=tenant_id,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        api_key=api_key,
+    )
+    if decision.decision == "DENY":
+        raise decision_to_http_exception(decision)
+    request.state.budget_reservation = reservation
+    if reservation is not None and reservation.soft_warning:
+        # Soft warning is attached by the caller via response headers when present.
+        request.state.budget_soft_warning = True
+        request.state.budget_scope = reservation.scope
+    return reservation
 
 
 @router.post("/v1/chat/completions", response_model=None)
@@ -151,6 +249,11 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             global_admission=global_admission if global_held else None,
         )
     except Exception:
+        # Any error after a budget reservation: refund if the model was never called,
+        # otherwise charge the estimate. Idempotent when already settled.
+        budget_reservation = getattr(request.state, "budget_reservation", None)
+        if budget_reservation is not None:
+            await budget_reservation.abandon()
         if lease is not None:
             await lease.release()
         if global_held and global_admission is not None:
@@ -177,30 +280,43 @@ async def _chat_completions_admitted(
     tokens_today: int | None = None
     month_to_date_cost_usd: float | None = None
     quota_reservation = None
+    budget_reservation: BudgetReservation | None = None
     estimated_input_tokens = 0
     estimated_output_tokens = 0
     estimated_spend_usd = 0.0
+    messages = payload.get("messages")
+    if isinstance(messages, list):
+        for message in messages:
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                estimated_input_tokens += max(1, len(message["content"]) // 4)
+    estimated_input_tokens = estimated_input_tokens or 1
+    estimated_output_tokens = _requested_output_tokens(
+        payload, default=min(estimated_input_tokens, 512)
+    )
+    estimate_model = str(requested_model or "")
+    estimate_target = settings.model_targets.get(estimate_model)
+    if estimate_target is not None:
+        estimated_spend_usd = round(
+            (
+                estimated_input_tokens * estimate_target.input_cost_per_million
+                + estimated_output_tokens * estimate_target.output_cost_per_million
+            )
+            / 1_000_000,
+            8,
+        )
+
+    # Inference budget guard: atomic reserve before governance / upstream.
+    budget_reservation = await _reserve_inference_budget(
+        request,
+        tenant_id=tenant_id,
+        model=estimate_model,
+        input_tokens=estimated_input_tokens,
+        output_tokens=estimated_output_tokens,
+    )
+
     if tenant_store is not None:
         team = tenant_store.resolve_team(request)
-        messages = payload.get("messages")
-        if isinstance(messages, list):
-            for message in messages:
-                if isinstance(message, dict) and isinstance(message.get("content"), str):
-                    estimated_input_tokens += max(1, len(message["content"]) // 4)
-        estimated_input_tokens = estimated_input_tokens or 1
-        estimated_output_tokens = int(payload.get("max_tokens") or min(estimated_input_tokens, 512))
         # Pre-reserve from model pricing so budget rules see the pending spend.
-        estimate_model = str(requested_model or "")
-        estimate_target = settings.model_targets.get(estimate_model)
-        if estimate_target is not None:
-            estimated_spend_usd = round(
-                (
-                    estimated_input_tokens * estimate_target.input_cost_per_million
-                    + estimated_output_tokens * estimate_target.output_cost_per_million
-                )
-                / 1_000_000,
-                8,
-            )
         quota_reservation = await tenant_store.reserve_request(
             team,
             input_tokens=estimated_input_tokens,
@@ -216,66 +332,73 @@ async def _chat_completions_admitted(
         and getattr(governance, "mode", "enforce") == "enforce"
         and governance.enabled
     )
-    if governance_active:
-        try:
-            evidence = evidence_from_governance(
-                await enforce_governance(
-                    request.app.state.client,
-                    governance,
-                    request,
-                    payload,
-                    settings.model_targets,
-                    requests_last_minute=requests_last_minute,
-                    tokens_today=tokens_today,
-                    month_to_date_cost_usd=month_to_date_cost_usd,
-                    replay_store=getattr(request.app.state, "decision_replay", None),
-                ),
-                enforcement_outcome="executed",
-            )
-        except Exception:
-            if quota_reservation is not None and tenant_store is not None:
-                await tenant_store.refund_reservation(quota_reservation)
-            raise
-        runtime_config = getattr(request.app.state, "runtime_config", None)
-        if runtime_config is not None and evidence is not None:
-            runtime_config.policy.observe(
-                bundle_id=evidence.policy_bundle_id,
-                digest=evidence.policy_digest,
-            )
-    else:
-        evidence = evidence_from_governance(None, enforcement_outcome="executed")
-    route = settings.model_routes.get(requested_model)
-    model, fallback_model = resolve_route(route, request_id, requested_model)
     try:
-        if route and route.routing_policy:
-            model, cost_rerouted = await select_cost_aware_backend(
-                route,
-                model,
-                fallback_model,
-                request.app.state.backend_health,
-                settings.model_targets,
-            )
-            health_rerouted = False
+        if governance_active:
+            try:
+                evidence = evidence_from_governance(
+                    await enforce_governance(
+                        request.app.state.client,
+                        governance,
+                        request,
+                        payload,
+                        settings.model_targets,
+                        requests_last_minute=requests_last_minute,
+                        tokens_today=tokens_today,
+                        month_to_date_cost_usd=month_to_date_cost_usd,
+                        replay_store=getattr(request.app.state, "decision_replay", None),
+                    ),
+                    enforcement_outcome="executed",
+                )
+            except Exception:
+                if quota_reservation is not None and tenant_store is not None:
+                    await tenant_store.refund_reservation(quota_reservation)
+                raise
+            runtime_config = getattr(request.app.state, "runtime_config", None)
+            if runtime_config is not None and evidence is not None:
+                runtime_config.policy.observe(
+                    bundle_id=evidence.policy_bundle_id,
+                    digest=evidence.policy_digest,
+                )
         else:
-            model, health_rerouted = await select_health_aware_backend(
-                route,
-                model,
-                fallback_model,
-                request.app.state.backend_health,
-                circuit_breaker=getattr(request.app.state, "circuit_breaker", None),
-            )
-            cost_rerouted = False
-    except NoHealthyBackendError as error:
-        raise api_error(
-            503,
-            code="no_healthy_backend",
-            message="no healthy backend for route",
-            error_type="api_error",
-        ) from error
+            evidence = evidence_from_governance(None, enforcement_outcome="executed")
+        route = settings.model_routes.get(requested_model)
+        model, fallback_model = resolve_route(route, request_id, requested_model)
+        try:
+            if route and route.routing_policy:
+                model, cost_rerouted = await select_cost_aware_backend(
+                    route,
+                    model,
+                    fallback_model,
+                    request.app.state.backend_health,
+                    settings.model_targets,
+                )
+                health_rerouted = False
+            else:
+                model, health_rerouted = await select_health_aware_backend(
+                    route,
+                    model,
+                    fallback_model,
+                    request.app.state.backend_health,
+                    circuit_breaker=getattr(request.app.state, "circuit_breaker", None),
+                )
+                cost_rerouted = False
+        except NoHealthyBackendError as error:
+            raise api_error(
+                503,
+                code="no_healthy_backend",
+                message="no healthy backend for route",
+                error_type="api_error",
+            ) from error
+    except Exception:
+        if budget_reservation is not None:
+            await budget_reservation.release()
+        raise
     if health_rerouted or cost_rerouted:
         fallback_model = None
     target = settings.model_targets.get(model)
     if target is None:
+        if budget_reservation is not None:
+            await budget_reservation.release()
         raise_api_error(
             404,
             code="model_not_found",
@@ -289,6 +412,10 @@ async def _chat_completions_admitted(
 
     started_at = time.monotonic()
     headers = {"x-request-id": request_id}
+    if budget_reservation is not None:
+        headers["X-AI-Budget-Decision"] = "ALLOW"
+        if budget_reservation.soft_warning:
+            headers["X-AI-Budget-Warning"] = "soft_threshold"
     fallback_target = settings.model_targets.get(fallback_model) if fallback_model else None
     with trace.get_tracer(__name__).start_as_current_span("gen_ai.chat") as span:
         span.set_attribute("gen_ai.request.model", requested_model)
@@ -302,6 +429,8 @@ async def _chat_completions_admitted(
                 upstream_request = request.app.state.client.build_request(
                     "POST", upstream_url, json={**payload, "model": model}, headers=headers
                 )
+                if budget_reservation is not None:
+                    budget_reservation.mark_executed()
                 upstream = await request.app.state.client.send(upstream_request, stream=True)
                 if (
                     upstream.status_code >= 500
@@ -373,6 +502,7 @@ async def _chat_completions_admitted(
                             usage=observation.usage,
                             spend_usd=stream_cost,
                         )
+                        await _settle_budget(budget_reservation, spend_usd=stream_cost)
                         observe_completion(
                             requested_model=requested_model,
                             selected_backend=selected_model,
@@ -425,6 +555,8 @@ async def _chat_completions_admitted(
                                 )
                             )
                     finally:
+                        # Settle even if bookkeeping above failed (no-op when settled).
+                        await _settle_budget(budget_reservation, spend_usd=None)
                         if lease is not None:
                             await lease.release()
                         release = getattr(global_admission, "release", None)
@@ -441,6 +573,8 @@ async def _chat_completions_admitted(
                     media_type=upstream.headers.get("content-type", "text/event-stream"),
                     headers=response_headers,
                 )
+            if budget_reservation is not None:
+                budget_reservation.mark_executed()
             upstream, model, fallback_used, failed_models = await post_completion_with_fallback(
                 request.app.state.client,
                 payload,
@@ -460,6 +594,15 @@ async def _chat_completions_admitted(
         except httpx.HTTPError as error:
             span.record_exception(error)
             await request.app.state.backend_health.record_request(model, success=False)
+            if budget_reservation is not None:
+                if isinstance(
+                    error, httpx.ConnectError | httpx.ConnectTimeout | httpx.HTTPStatusError
+                ):
+                    # Backend never accepted / refused the request: refund.
+                    await budget_reservation.release()
+                else:
+                    # Request may have reached the model (read timeout, dropped body).
+                    await budget_reservation.settle(None)
             reason = routing_reason(
                 cost_rerouted=cost_rerouted,
                 health_rerouted=health_rerouted,
@@ -510,6 +653,7 @@ async def _chat_completions_admitted(
             usage=response.get("usage"),
             spend_usd=estimated_cost,
         )
+        await _settle_budget(budget_reservation, spend_usd=estimated_cost)
         headers["x-selected-backend"] = model
         headers["x-routing-reason"] = reason
         headers["x-fallback-used"] = "true" if fallback_flag else "false"
