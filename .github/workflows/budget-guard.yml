@@ -11,6 +11,22 @@ permissions:
 jobs:
   budget-guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        # redis:7.4-alpine, pinned by digest
+        image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      # Real Redis server: multiprocess concurrency tests must run, never skip.
+      BUDGET_GUARD_REDIS_URL: redis://localhost:6379/15
+      BUDGET_GUARD_REQUIRE_REDIS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -45,7 +61,15 @@ jobs:
           data = json.loads(Path("docs/results.json").read_text())
           bg = data["budget_guard"]
           assert bg["false_deny_count_legitimate"] == 0
-          assert bg["concurrency"]["overspend_events"] == 0
+          conc = bg["concurrency"]
+          assert conc["overspend_events"] == 0
+          real = conc["real_redis_multiprocess"]
+          assert real["rounds"] >= 10, real
+          assert real["allows_per_round"] == [real["expected_allows_per_round"]], real
+          settle = conc["real_redis_multiprocess_settle"]
+          assert settle["rounds"] >= 10, settle
+          assert settle["exact_committed_rounds"] == settle["rounds"], settle
+          assert settle["leaked_reserved_micros"] == 0, settle
           assert bg["scenario_count"] >= 10
           for row in bg["envelopes"]:
               for key in (

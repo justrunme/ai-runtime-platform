@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,7 @@ DOCS = ROOT / "docs"
 RESULTS_PARTIAL = DOCS / "budget_guard_results.json"
 RESULTS = DOCS / "results.json"
 EVIDENCE = DOCS / "EVIDENCE.md"
+JUNIT = ROOT / ".budget-guard-junit.xml"
 
 
 def run_tests() -> None:
@@ -37,8 +39,27 @@ def run_tests() -> None:
         "app/gateway/tests/test_budget_guard.py",
         "-q",
         "--tb=short",
+        "-p",
+        "no:cacheprovider",
+        f"--junitxml={JUNIT}",
     ]
     subprocess.check_call(cmd, cwd=ROOT, env=env)
+
+
+def junit_counts() -> dict:
+    suite = ET.parse(JUNIT).getroot()
+    if suite.tag == "testsuites":
+        suite = suite[0]
+    total = int(suite.get("tests", 0))
+    failures = int(suite.get("failures", 0)) + int(suite.get("errors", 0))
+    skipped = int(suite.get("skipped", 0))
+    JUNIT.unlink()
+    return {
+        "tests": total,
+        "passed": total - failures - skipped,
+        "failed": failures,
+        "skipped": skipped,
+    }
 
 
 def load_partial() -> dict:
@@ -58,7 +79,8 @@ def merge_results(partial: dict) -> dict:
     if os.environ.get("GITHUB_RUN_ID"):
         repo = os.environ.get("GITHUB_REPOSITORY", "justrunme/ai-runtime-platform")
         run_url = f"https://github.com/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
-    concurrency = partial["concurrency"]
+    concurrency = dict(partial["concurrency"])
+    concurrency.pop("results", None)
     existing["budget_guard"] = {
         "suite": partial["suite"],
         "scope": partial["scope"],
@@ -69,13 +91,9 @@ def merge_results(partial: dict) -> dict:
         "policy_sha256": partial["policy_sha256"],
         "scenario_count": len(partial["envelopes"]),
         "false_deny_count_legitimate": partial["false_deny_count_legitimate"],
-        "concurrency": {
-            "rounds_per_backend": concurrency["rounds_per_backend"],
-            "parallel_requests": concurrency["parallel_requests"],
-            "overspend_events": concurrency["overspend_events"],
-            "max_total_usd_observed": concurrency["max_total_usd_observed"],
-            "budget_usd": concurrency["budget_usd"],
-        },
+        "test_counts": partial.get("test_counts", {}),
+        "real_redis": bool(os.environ.get("BUDGET_GUARD_REDIS_URL")),
+        "concurrency": concurrency,
         "limits": partial["limits"],
         "envelopes": partial["envelopes"],
     }
@@ -85,7 +103,9 @@ def merge_results(partial: dict) -> dict:
         existing["metrics"] = {}
     existing["metrics"]["budget_guard_false_deny"] = partial["false_deny_count_legitimate"]
     existing["metrics"]["budget_guard_overspend_events"] = concurrency["overspend_events"]
-    existing["metrics"]["budget_guard_concurrency_rounds"] = concurrency["rounds_per_backend"] * 2
+    existing["metrics"]["budget_guard_real_redis_rounds"] = concurrency["real_redis_multiprocess"][
+        "rounds"
+    ]
     return existing
 
 
@@ -134,31 +154,44 @@ def render_evidence(merged: dict) -> str:
 
     run = bg.get("source_run") or "(local)"
     sha = bg.get("commit_sha") or "unknown"
+    real = conc["real_redis_multiprocess"]
+    settle = conc["real_redis_multiprocess_settle"]
+    counts = bg.get("test_counts", {})
+    status = "Tested in CI" if run != "(local)" else "Tested locally; re-run in CI"
     lines.append(
-        "| Inference budget guard: atomic reserve ≤ budget under concurrency | "
-        "Tested in CI | "
-        f"`test_budget_guard` · {conc['parallel_requests']} parallel × "
-        f"{conc['rounds_per_backend']} rounds × memory+redis/fakeredis | "
-        "On this test suite / fakeredis or in-process memory — not multi-region billing; "
-        "estimate may differ from actual usage; settlement can lag | "
+        "| Inference budget guard: atomic reserve ≤ budget under real parallelism | "
+        f"{status} | "
+        f"`test_budget_guard` · real Redis server · {real['processes']} OS processes × "
+        f"{real['attempts_per_round'] // max(real['processes'], 1)} concurrent reserves × "
+        f"{real['rounds']} rounds | "
+        "On this test suite, one Redis — not multi-region billing; estimate may differ "
+        "from actual usage; settlement can lag | "
         f"{run} · SHA `{sha}` | "
-        f"overspend_events={conc['overspend_events']}; "
-        f"max_total_usd_observed={conc['max_total_usd_observed']} ≤ budget "
-        f"{conc['budget_usd']} |"
+        f"allows/round={real['allows_per_round']} (expected "
+        f"{real['expected_allows_per_round']}); overspend_events={conc['overspend_events']} |"
+    )
+    lines.append(
+        "| Inference budget guard: concurrent settle/release/abandon is exact | "
+        f"{status} | Same suite · real Redis · {settle['rounds']} rounds | "
+        "Integer micro-USD; duplicate settles are no-ops | "
+        f"{run} · SHA `{sha}` | exact_committed_rounds={settle['exact_committed_rounds']}/"
+        f"{settle['rounds']}; leaked_reserved_micros={settle['leaked_reserved_micros']} |"
     )
     lines.append(
         "| Inference budget guard: fail-closed on store down/timeout/corrupt + malformed policy | "
-        "Tested in CI | Same suite | Denies with 503; no silent allow on this setup | "
+        f"{status} | Same suite (guard + gateway chat path) | Denies with 503 and the backend "
+        "is not called, on this setup | "
         f"{run} · SHA `{sha}` | store_down, store_timeout, store_corrupt, malformed_policy |"
     )
     lines.append(
-        "| Inference budget guard: over-budget deny, settlement refund, expired release | "
-        "Tested in CI | Same suite | Reservation TTL reclaim; refund = reserved − actual | "
+        "| Inference budget guard: over-budget deny, settle, TTL expiry, window rollover | "
+        f"{status} | Same suite | Late settle after TTL still commits spend once | "
         f"{run} · SHA `{sha}` | over_budget, settlement_refunds_unused, expired_reservation |"
     )
     lines.append(
-        f"| Inference budget guard: legitimate within-budget allow (false-deny={bg['false_deny_count_legitimate']}) | "
-        "Tested in CI | Same suite | On this test suite only | "
+        f"| Inference budget guard: legitimate within-budget allow "
+        f"(false-deny={bg['false_deny_count_legitimate']}) | "
+        f"{status} | Same suite | On this test suite only | "
         f"{run} · SHA `{sha}` | false_deny_count_legitimate |"
     )
 
@@ -170,9 +203,16 @@ def render_evidence(merged: dict) -> str:
         f"- Policy version: `{bg['policy_version']}`",
         f"- Policy sha256: `{bg['policy_sha256']}`",
         f"- Scenario envelopes: `{bg['scenario_count']}`",
+        f"- Tests: `{counts.get('passed', '?')}` passed, `{counts.get('failed', '?')}` failed, "
+        f"`{counts.get('skipped', '?')}` skipped (real Redis: `{bg.get('real_redis')}`)",
         f"- False-deny count (legitimate): `{bg['false_deny_count_legitimate']}`",
-        f"- Concurrency overspend events: `{conc['overspend_events']}` "
-        f"(max total USD observed `{conc['max_total_usd_observed']}` vs budget `{conc['budget_usd']}`)",
+        f"- Concurrency overspend events: `{conc['overspend_events']}`",
+        f"- Real Redis, {real['processes']} processes: allows per round "
+        f"`{real['allows_per_round']}` (budget allows `{real['expected_allows_per_round']}`), "
+        f"max reserved `{real['max_reserved_micros']}` of `{real['budget_micros']}` micro-USD "
+        f"over `{real['rounds']}` rounds",
+        f"- Concurrent settle: exact in `{settle['exact_committed_rounds']}/{settle['rounds']}` "
+        f"rounds, leaked reserved micro-USD `{settle['leaked_reserved_micros']}`",
         "",
         "### Decision envelopes",
         "",
@@ -217,7 +257,9 @@ def render_evidence(merged: dict) -> str:
 
 def main() -> None:
     run_tests()
+    counts = junit_counts()
     partial = load_partial()
+    partial["test_counts"] = counts
     merged = merge_results(partial)
     RESULTS.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
     EVIDENCE.write_text(render_evidence(merged), encoding="utf-8")
@@ -229,6 +271,7 @@ def main() -> None:
                 "scenarios": merged["budget_guard"]["scenario_count"],
                 "false_deny": merged["budget_guard"]["false_deny_count_legitimate"],
                 "overspend_events": merged["budget_guard"]["concurrency"]["overspend_events"],
+                "tests": counts,
             },
             indent=2,
         )

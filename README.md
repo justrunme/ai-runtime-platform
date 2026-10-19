@@ -86,7 +86,7 @@ This repository is the **Execution Plane**: routing, shared-state HA, observed s
 
 ## Inference Budget Guard
 
-Before `/v1/chat/completions` executes, the gateway can **atomically reserve** estimated cost (`tokens × price`) against a per-tenant or per-key window budget (Redis Lua or in-process lock). Over-budget requests are refused (`429`); store/policy failures **fail closed** (`503`). After the request, the reservation is **settled** to actual priced usage (unused estimate refunded). Soft-warning threshold emits `X-AI-Budget-Warning` without denying.
+Before `/v1/chat/completions` executes, the gateway can **atomically reserve** estimated cost (`tokens × price`) against a per-tenant or per-key window budget (Redis Lua or in-process lock). Over-budget requests are refused (`429`); store/policy failures **fail closed** (`503`). Off by default (`INFERENCE_BUDGET_ENABLED`). After the request, the reservation is **settled** to actual priced usage (unused estimate refunded; unknown usage is charged at the estimate). Soft-warning threshold emits `X-AI-Budget-Warning` without denying.
 
 Design: [docs/budget-guard.md](docs/budget-guard.md) · Evidence: [docs/EVIDENCE.md](docs/EVIDENCE.md) (regenerate with `python scripts/generate_budget_evidence.py`). Claims are **on this test suite / this setup** only — estimates can differ from actual usage, and settlement can lag.
 
@@ -95,7 +95,7 @@ Design: [docs/budget-guard.md](docs/budget-guard.md) · Evidence: [docs/EVIDENCE
 | Runtime path | Production controls | Operational evidence |
 | --- | --- | --- |
 | OpenAI-compatible FastAPI gateway | Health-aware, fallback, canary, cost-aware routing, and governance enforcement | Animated routing demos and local response captures |
-| Inference budget guard | Atomic reserve / settle, fail-closed store errors, per-tenant & per-key budgets | Concurrency + negative tests in CI; ASC-shaped decision envelopes |
+| Inference budget guard | Atomic reserve / settle, fail-closed store errors, per-tenant & per-key budgets | Multiprocess concurrency tests against a real Redis service in CI, negative tests; ASC-shaped decision envelopes |
 | MCP + intent | Governed evaluate-tool then optional Streamable HTTP `tools/call`; `/v1/intent/resolve` | Requires Control Plane unless `MCP_ALLOW_UNGOVERNED` for demos |
 | vLLM and KServe serving examples | GPU scheduling, probes, ServiceMonitor, KEDA queue scaling | Helm, Kustomize, kubeconform, and Docker CI gates |
 | OpenTelemetry and Prometheus metrics | Request IDs, traces, routing labels, tenant attribution, fallback and cost metrics | Grafana dashboard, OTLP collector, signed release image |

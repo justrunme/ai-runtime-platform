@@ -5,10 +5,16 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from decimal import ROUND_CEILING, Decimal
 from functools import lru_cache
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def api_key_fingerprint(api_key: str) -> str:
+    """Stable, non-reversible identifier for an API key used in budget scopes."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
 
 
 class ModelPrice(BaseModel):
@@ -64,7 +70,8 @@ class InferenceBudgetPolicy(BaseModel):
         if tenant is None:
             return f"tenant:{tenant_id}", self.default
         if api_key and api_key in tenant.api_keys:
-            return f"key:{tenant_id}:{api_key}", tenant.api_keys[api_key]
+            # Never put the raw key in Redis key names, metric labels or error bodies.
+            return f"key:{tenant_id}:{api_key_fingerprint(api_key)}", tenant.api_keys[api_key]
         return f"tenant:{tenant_id}", ScopeBudget(
             budgetUsd=tenant.budget_usd,
             windowSeconds=tenant.window_seconds,
@@ -79,16 +86,23 @@ class InferenceBudgetPolicy(BaseModel):
             return self.prices["*"]
         return self.prices["default"]
 
-    def estimate_cost_usd(self, model: str, *, input_tokens: int, output_tokens: int) -> float:
+    def estimate_cost_micros(self, model: str, *, input_tokens: int, output_tokens: int) -> int:
+        """Estimated cost in integer USD micro-units, rounded up (never under-reserve).
+
+        Prices are USD per million tokens, so ``tokens * price`` is already micro-USD.
+        Decimal arithmetic avoids binary float error on the money path.
+        """
         price = self.price_for(model)
-        return round(
-            (
-                max(0, input_tokens) * price.input_per_million
-                + max(0, output_tokens) * price.output_per_million
-            )
-            / 1_000_000,
-            8,
+        micros = Decimal(max(0, int(input_tokens))) * Decimal(str(price.input_per_million)) + (
+            Decimal(max(0, int(output_tokens))) * Decimal(str(price.output_per_million))
         )
+        return int(micros.to_integral_value(rounding=ROUND_CEILING))
+
+    def estimate_cost_usd(self, model: str, *, input_tokens: int, output_tokens: int) -> float:
+        micros = self.estimate_cost_micros(
+            model, input_tokens=input_tokens, output_tokens=output_tokens
+        )
+        return micros / 1_000_000
 
     def canonical_bytes(self) -> bytes:
         payload = self.model_dump(by_alias=True, mode="json")

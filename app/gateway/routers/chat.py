@@ -88,10 +88,25 @@ async def _settle_budget(
     *,
     spend_usd: float | None,
 ) -> None:
-    """Settle a budget reservation with actual priced usage (or zero on failure)."""
+    """Settle with actual priced usage; unknown usage (None) is charged at the estimate."""
     if budget_reservation is None:
         return
-    await budget_reservation.settle(float(spend_usd or 0.0))
+    await budget_reservation.settle(spend_usd)
+
+
+def _requested_output_tokens(payload: dict, default: int) -> int:
+    """Best-effort output-token cap from the request; malformed values use the default."""
+    for key in ("max_completion_tokens", "max_tokens"):
+        raw = payload.get(key)
+        if raw is None or isinstance(raw, bool):
+            continue
+        try:
+            value = int(raw)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if value > 0:
+            return value
+    return default
 
 
 async def _reserve_inference_budget(
@@ -152,6 +167,7 @@ async def _reserve_inference_budget(
     )
     if decision.decision == "DENY":
         raise decision_to_http_exception(decision)
+    request.state.budget_reservation = reservation
     if reservation is not None and reservation.soft_warning:
         # Soft warning is attached by the caller via response headers when present.
         request.state.budget_soft_warning = True
@@ -233,6 +249,11 @@ async def chat_completions(request: Request) -> JSONResponse | StreamingResponse
             global_admission=global_admission if global_held else None,
         )
     except Exception:
+        # Any error after a budget reservation: refund if the model was never called,
+        # otherwise charge the estimate. Idempotent when already settled.
+        budget_reservation = getattr(request.state, "budget_reservation", None)
+        if budget_reservation is not None:
+            await budget_reservation.abandon()
         if lease is not None:
             await lease.release()
         if global_held and global_admission is not None:
@@ -269,7 +290,9 @@ async def _chat_completions_admitted(
             if isinstance(message, dict) and isinstance(message.get("content"), str):
                 estimated_input_tokens += max(1, len(message["content"]) // 4)
     estimated_input_tokens = estimated_input_tokens or 1
-    estimated_output_tokens = int(payload.get("max_tokens") or min(estimated_input_tokens, 512))
+    estimated_output_tokens = _requested_output_tokens(
+        payload, default=min(estimated_input_tokens, 512)
+    )
     estimate_model = str(requested_model or "")
     estimate_target = settings.model_targets.get(estimate_model)
     if estimate_target is not None:
@@ -406,6 +429,8 @@ async def _chat_completions_admitted(
                 upstream_request = request.app.state.client.build_request(
                     "POST", upstream_url, json={**payload, "model": model}, headers=headers
                 )
+                if budget_reservation is not None:
+                    budget_reservation.mark_executed()
                 upstream = await request.app.state.client.send(upstream_request, stream=True)
                 if (
                     upstream.status_code >= 500
@@ -530,6 +555,8 @@ async def _chat_completions_admitted(
                                 )
                             )
                     finally:
+                        # Settle even if bookkeeping above failed (no-op when settled).
+                        await _settle_budget(budget_reservation, spend_usd=None)
                         if lease is not None:
                             await lease.release()
                         release = getattr(global_admission, "release", None)
@@ -546,6 +573,8 @@ async def _chat_completions_admitted(
                     media_type=upstream.headers.get("content-type", "text/event-stream"),
                     headers=response_headers,
                 )
+            if budget_reservation is not None:
+                budget_reservation.mark_executed()
             upstream, model, fallback_used, failed_models = await post_completion_with_fallback(
                 request.app.state.client,
                 payload,
@@ -566,7 +595,14 @@ async def _chat_completions_admitted(
             span.record_exception(error)
             await request.app.state.backend_health.record_request(model, success=False)
             if budget_reservation is not None:
-                await budget_reservation.release()
+                if isinstance(
+                    error, httpx.ConnectError | httpx.ConnectTimeout | httpx.HTTPStatusError
+                ):
+                    # Backend never accepted / refused the request: refund.
+                    await budget_reservation.release()
+                else:
+                    # Request may have reached the model (read timeout, dropped body).
+                    await budget_reservation.settle(None)
             reason = routing_reason(
                 cost_rerouted=cost_rerouted,
                 health_rerouted=health_rerouted,

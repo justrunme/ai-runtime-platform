@@ -8,10 +8,12 @@ Store outages, timeouts, and corrupt data fail closed (deny).
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import time
 import uuid
 from dataclasses import dataclass, field
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_EVEN, Decimal
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException
@@ -56,128 +58,200 @@ BUDGET_SOFT_WARNINGS = Counter(
     ["scope"],
 )
 
-# KEYS[1]=window hash, KEYS[2]=reservations zset, KEYS[3]=reservation amounts hash
+# All money in Redis is integer USD micro-units. Reservation amounts live in the
+# amounts hash as "<micros>" while live and "x<micros>" (tombstone) once expired, so
+# a late settle can still commit real spend exactly once.
+#
+# KEYS[1]=window hash, KEYS[2]=reservations zset (id -> expiry_ms),
+# KEYS[3]=reservation amounts hash (id -> micros | x<micros>)
+_LUA_PRELUDE = """
+local function num(v)
+  if v == false or v == nil then return 0 end
+  return tonumber(v)
+end
+
+-- Returns committed, reserved, window_start or nil when the stored hash is corrupt.
+local function load_window()
+  local committed = num(redis.call('HGET', KEYS[1], 'committed_micros'))
+  local reserved = num(redis.call('HGET', KEYS[1], 'reserved_micros'))
+  local window_start = num(redis.call('HGET', KEYS[1], 'window_start'))
+  if committed == nil or reserved == nil or window_start == nil then
+    return nil
+  end
+  return committed, reserved, window_start
+end
+
+-- Expire reservations whose TTL passed: release their amount from reserved and
+-- leave a tombstone. Returns new reserved, expired count, released micros,
+-- or nil when a stored amount is corrupt (nothing is modified in that case).
+local function expire(now, reserved)
+  local expired = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now)
+  local amounts = {}
+  for i = 1, #expired do
+    local raw = redis.call('HGET', KEYS[3], expired[i])
+    local amt = 0
+    if raw then
+      amt = tonumber(raw)
+      if amt == nil then return nil end
+    end
+    amounts[i] = amt
+  end
+  local released = 0
+  for i = 1, #expired do
+    released = released + amounts[i]
+    redis.call('HSET', KEYS[3], expired[i], 'x' .. string.format('%d', amounts[i]))
+  end
+  if #expired > 0 then
+    redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
+  end
+  reserved = reserved - released
+  if reserved < 0 then reserved = 0 end
+  return reserved, #expired, released
+end
+
+local function touch(ttl)
+  redis.call('PEXPIRE', KEYS[1], ttl)
+  redis.call('PEXPIRE', KEYS[2], ttl)
+  redis.call('PEXPIRE', KEYS[3], ttl)
+end
+"""
+
 # ARGV: now_ms, window_ms, budget_micros, estimate_micros, res_id, ttl_ms
-_RESERVE_LUA = """
+# Returns {code, committed, reserved, total, expired}; code 1=allow, 0=deny, -1=bad args,
+# -2=corrupt store.
+_RESERVE_LUA = (
+    _LUA_PRELUDE
+    + """
 local now = tonumber(ARGV[1])
 local window = tonumber(ARGV[2])
 local budget = tonumber(ARGV[3])
 local estimate = tonumber(ARGV[4])
 local res_id = ARGV[5]
 local ttl = tonumber(ARGV[6])
-
 if budget == nil or estimate == nil or now == nil or window == nil or ttl == nil then
-  return {-1, 0, 0, 0}
+  return {-1, 0, 0, 0, 0}
 end
-if estimate < 0 or budget <= 0 then
-  return {-1, 0, 0, 0}
+if estimate < 0 or budget <= 0 or window <= 0 or ttl <= 0 then
+  return {-1, 0, 0, 0, 0}
 end
+local keys_ttl = math.max(window, ttl) * 4
 
-local expired = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now)
-local expired_count = #expired
-for i = 1, expired_count do
-  local id = expired[i]
-  local amt = tonumber(redis.call('HGET', KEYS[3], id) or '0')
-  if amt > 0 then
-    redis.call('HINCRBY', KEYS[1], 'reserved_micros', -amt)
-  end
-  redis.call('HDEL', KEYS[3], id)
-end
-if expired_count > 0 then
-  redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
-end
+local committed, reserved, window_start = load_window()
+if committed == nil then return {-2, 0, 0, 0, 0} end
+local expired_count
+reserved, expired_count = expire(now, reserved)
+if reserved == nil then return {-2, 0, 0, 0, 0} end
 
-local window_start = tonumber(redis.call('HGET', KEYS[1], 'window_start') or '0')
+-- Window rollover resets committed spend only; in-flight reservations carry over.
 if window_start == 0 or (now - window_start) >= window then
-  redis.call('HSET', KEYS[1], 'window_start', now, 'committed_micros', 0, 'reserved_micros', 0)
-  redis.call('DEL', KEYS[2], KEYS[3])
-end
-
-local committed = tonumber(redis.call('HGET', KEYS[1], 'committed_micros') or '0')
-local reserved = tonumber(redis.call('HGET', KEYS[1], 'reserved_micros') or '0')
-if reserved < 0 then
-  reserved = 0
-  redis.call('HSET', KEYS[1], 'reserved_micros', 0)
+  window_start = now
+  committed = 0
 end
 
 if (committed + reserved + estimate) > budget then
+  redis.call('HSET', KEYS[1], 'window_start', string.format('%d', window_start),
+    'committed_micros', string.format('%d', committed),
+    'reserved_micros', string.format('%d', reserved))
+  touch(keys_ttl)
   return {0, committed, reserved, committed + reserved, expired_count}
 end
 
-redis.call('HINCRBY', KEYS[1], 'reserved_micros', estimate)
+reserved = reserved + estimate
+redis.call('HSET', KEYS[1], 'window_start', string.format('%d', window_start),
+  'committed_micros', string.format('%d', committed),
+  'reserved_micros', string.format('%d', reserved))
 redis.call('ZADD', KEYS[2], now + ttl, res_id)
-redis.call('HSET', KEYS[3], res_id, tostring(estimate))
-redis.call('PEXPIRE', KEYS[1], window * 4)
-redis.call('PEXPIRE', KEYS[2], window * 4)
-redis.call('PEXPIRE', KEYS[3], window * 4)
-
-local new_reserved = reserved + estimate
-return {1, committed, new_reserved, committed + new_reserved, expired_count}
+redis.call('HSET', KEYS[3], res_id, string.format('%d', estimate))
+touch(keys_ttl)
+return {1, committed, reserved, committed + reserved, expired_count}
 """
+)
 
-# KEYS[1]=window hash, KEYS[2]=reservations zset, KEYS[3]=reservation amounts hash
-# ARGV: res_id, actual_micros
-_SETTLE_LUA = """
+# ARGV: res_id, actual_micros, now_ms, window_ms
+# Returns {code, committed, reserved, reserved_amt}; code 1=settled live reservation,
+# 2=settled after TTL expiry (spend still committed), 0=unknown/already settled (no-op),
+# -1=bad args, -2=corrupt store.
+_SETTLE_LUA = (
+    _LUA_PRELUDE
+    + """
 local res_id = ARGV[1]
 local actual = tonumber(ARGV[2])
-if actual == nil or actual < 0 then
-  return {-1, 0, 0}
+local now = tonumber(ARGV[3])
+local window = tonumber(ARGV[4])
+if actual == nil or actual < 0 or now == nil or window == nil or window <= 0 then
+  return {-1, 0, 0, 0}
 end
-local reserved_amt = redis.call('HGET', KEYS[3], res_id)
-if not reserved_amt then
-  return {0, 0, 0}
+local raw = redis.call('HGET', KEYS[3], res_id)
+if not raw then
+  return {0, 0, 0, 0}
 end
-reserved_amt = tonumber(reserved_amt)
+local tombstone = string.sub(raw, 1, 1) == 'x'
+local amt
+if tombstone then amt = tonumber(string.sub(raw, 2)) else amt = tonumber(raw) end
+local committed, reserved, window_start = load_window()
+if amt == nil or committed == nil then return {-2, 0, 0, 0} end
+
+if window_start == 0 or (now - window_start) >= window then
+  window_start = now
+  committed = 0
+end
 redis.call('HDEL', KEYS[3], res_id)
 redis.call('ZREM', KEYS[2], res_id)
-redis.call('HINCRBY', KEYS[1], 'reserved_micros', -reserved_amt)
-redis.call('HINCRBY', KEYS[1], 'committed_micros', actual)
-local reserved = tonumber(redis.call('HGET', KEYS[1], 'reserved_micros') or '0')
-if reserved < 0 then
-  redis.call('HSET', KEYS[1], 'reserved_micros', 0)
-  reserved = 0
+if not tombstone then
+  reserved = reserved - amt
+  if reserved < 0 then reserved = 0 end
 end
-local committed = tonumber(redis.call('HGET', KEYS[1], 'committed_micros') or '0')
-return {1, committed, reserved, reserved_amt}
+committed = committed + actual
+redis.call('HSET', KEYS[1], 'window_start', string.format('%d', window_start),
+  'committed_micros', string.format('%d', committed),
+  'reserved_micros', string.format('%d', reserved))
+local code = 1
+if tombstone then code = 2 end
+return {code, committed, reserved, amt}
 """
+)
 
-# KEYS[1]=window hash, KEYS[2]=reservations zset, KEYS[3]=reservation amounts hash
-# ARGV: now_ms
-_PURGE_LUA = """
+# ARGV: now_ms. Returns {expired_count, released, committed, reserved} or {-2,...}.
+_PURGE_LUA = (
+    _LUA_PRELUDE
+    + """
 local now = tonumber(ARGV[1])
-local expired = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now)
-local expired_count = #expired
-local released = 0
-for i = 1, expired_count do
-  local id = expired[i]
-  local amt = tonumber(redis.call('HGET', KEYS[3], id) or '0')
-  if amt > 0 then
-    redis.call('HINCRBY', KEYS[1], 'reserved_micros', -amt)
-    released = released + amt
-  end
-  redis.call('HDEL', KEYS[3], id)
-end
+if now == nil then return {-1, 0, 0, 0} end
+local committed, reserved, window_start = load_window()
+if committed == nil then return {-2, 0, 0, 0} end
+local expired_count, released
+reserved, expired_count, released = expire(now, reserved)
+if reserved == nil then return {-2, 0, 0, 0} end
 if expired_count > 0 then
-  redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
+  redis.call('HSET', KEYS[1], 'reserved_micros', string.format('%d', reserved))
 end
-local reserved = tonumber(redis.call('HGET', KEYS[1], 'reserved_micros') or '0')
-if reserved < 0 then
-  redis.call('HSET', KEYS[1], 'reserved_micros', 0)
-  reserved = 0
-end
-local committed = tonumber(redis.call('HGET', KEYS[1], 'committed_micros') or '0')
 return {expired_count, released, committed, reserved}
 """
+)
 
 MICROS = 1_000_000
 
 
-def usd_to_micros(usd: float) -> int:
-    return int(round(float(usd) * MICROS))
+def usd_to_micros(usd: float, *, rounding: str = ROUND_HALF_EVEN) -> int:
+    """Convert USD to integer micro-units via Decimal (no binary float drift)."""
+    value = Decimal(str(usd))
+    if not value.is_finite():
+        raise ValueError(f"non-finite USD amount: {usd!r}")
+    return int((value * MICROS).to_integral_value(rounding=rounding))
+
+
+def charge_to_micros(usd: float) -> int:
+    """Charges (estimates, actual spend) round up so spend is never under-counted."""
+    return usd_to_micros(usd, rounding=ROUND_CEILING)
+
+
+def budget_to_micros(usd: float) -> int:
+    """Budget caps round down so the cap is never exceeded by rounding."""
+    return usd_to_micros(usd, rounding=ROUND_FLOOR)
 
 
 def micros_to_usd(micros: int) -> float:
-    return round(int(micros) / MICROS, 8)
+    return int(micros) / MICROS
 
 
 def _env_float(name: str, default: float) -> float:
@@ -213,21 +287,50 @@ class BudgetReservation:
     soft_warning: bool
     policy_version: str
     policy_sha256: str
+    window_ms: int = 0
+    executed: bool = False
     _settled: bool = False
 
     @property
     def reserved_usd(self) -> float:
         return micros_to_usd(self.reserved_micros)
 
-    async def settle(self, actual_usd: float) -> None:
+    @property
+    def settled(self) -> bool:
+        return self._settled
+
+    def mark_executed(self) -> None:
+        """Record that the upstream model was (or may have been) called."""
+        self.executed = True
+
+    async def settle(self, actual_usd: float | None) -> None:
+        """Settle once. Unknown or invalid actual spend is charged at the estimate."""
         if self._settled:
             return
         self._settled = True
-        await self.guard._settle(self, usd_to_micros(actual_usd))
+        actual_micros = self.reserved_micros
+        if actual_usd is not None:
+            try:
+                value = float(actual_usd)
+                if math.isfinite(value) and value >= 0:
+                    actual_micros = charge_to_micros(value)
+            except (TypeError, ValueError):
+                pass
+        await self.guard._settle(self, actual_micros)
 
     async def release(self) -> None:
-        """Refund the full reservation (unused / failed request)."""
-        await self.settle(0.0)
+        """Refund the full reservation: the upstream model was never called."""
+        if self._settled:
+            return
+        self._settled = True
+        await self.guard._settle(self, 0)
+
+    async def abandon(self) -> None:
+        """Error path: refund if nothing executed, else charge the estimate."""
+        if self.executed:
+            await self.settle(None)
+        else:
+            await self.release()
 
 
 def _deny(
@@ -309,7 +412,19 @@ class _MemoryWindow:
     window_start_ms: int = 0
     committed_micros: int = 0
     reserved_micros: int = 0
+    # res_id -> (expiry_ms, micros)
     reservations: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # Expired-but-unsettled reservations: res_id -> (forget_after_ms, micros)
+    tombstones: dict[str, tuple[int, int]] = field(default_factory=dict)
+
+
+_STORE_TIMEOUT_ERRORS: tuple[type[BaseException], ...] = (TimeoutError, asyncio.TimeoutError)
+try:  # redis-py raises its own TimeoutError subclass of RedisError
+    from redis.exceptions import TimeoutError as _RedisTimeoutError
+
+    _STORE_TIMEOUT_ERRORS = (*_STORE_TIMEOUT_ERRORS, _RedisTimeoutError)
+except ImportError:  # pragma: no cover - redis is a hard dependency
+    pass
 
 
 class InferenceBudgetGuard:
@@ -373,72 +488,101 @@ class InferenceBudgetGuard:
     def simulate_store_corrupt(self, enabled: bool = True) -> None:
         self._force_corrupt = enabled
 
-    def _window_key(self, scope: str) -> str:
-        return f"arp:budget:{scope}:window"
+    def _keys(self, scope: str) -> list[str]:
+        return [
+            f"arp:budget:{scope}:window",
+            f"arp:budget:{scope}:reservations",
+            f"arp:budget:{scope}:amounts",
+        ]
 
-    def _reservations_key(self, scope: str) -> str:
-        return f"arp:budget:{scope}:reservations"
-
-    def _amounts_key(self, scope: str) -> str:
-        return f"arp:budget:{scope}:amounts"
-
-    async def _ensure_scripts(self) -> None:
+    async def _eval_unbounded(
+        self, sha_attr: str, script: str, keys: list[str], args: list[object]
+    ) -> object:
         assert self._redis is not None
-        if self._reserve_sha is None:
-            self._reserve_sha = await self._redis.script_load(_RESERVE_LUA)
-        if self._settle_sha is None:
-            self._settle_sha = await self._redis.script_load(_SETTLE_LUA)
-        if self._purge_sha is None:
-            self._purge_sha = await self._redis.script_load(_PURGE_LUA)
+        sha = getattr(self, sha_attr)
+        if sha is None:
+            sha = await self._redis.script_load(script)
+            setattr(self, sha_attr, sha)
+        try:
+            return await self._redis.evalsha(sha, len(keys), *keys, *args)
+        except Exception as error:
+            if "NOSCRIPT" not in str(error).upper():
+                raise
+        sha = await self._redis.script_load(script)
+        setattr(self, sha_attr, sha)
+        return await self._redis.evalsha(sha, len(keys), *keys, *args)
 
     async def _eval(
         self, sha_attr: str, script: str, keys: list[str], args: list[object]
     ) -> object:
+        """Run a Lua script; the whole exchange (load + eval + reload) is time-bounded."""
         assert self._redis is not None
         if self._force_unavailable:
             raise ConnectionError("simulated budget store unavailable")
         if self._force_timeout:
             raise TimeoutError("simulated budget store timeout")
-        await self._ensure_scripts()
-        sha = getattr(self, sha_attr)
+        if self._force_corrupt:
+            # Simulate a corrupt payload without touching the store.
+            return ["corrupt"]
         try:
             result = await asyncio.wait_for(
-                self._redis.evalsha(sha, len(keys), *keys, *args),
+                self._eval_unbounded(sha_attr, script, keys, args),
                 timeout=self._store_timeout_seconds,
             )
-        except TimeoutError:
+        except _STORE_TIMEOUT_ERRORS:
             self._redis_ok = False
             self._last_error = "timeout"
+            raise TimeoutError("budget store timeout") from None
+        except Exception as error:
+            self._redis_ok = False
+            self._last_error = str(error)
             raise
-        except Exception as error:  # noqa: BLE001 - NOSCRIPT reload path
-            if "NOSCRIPT" not in str(error).upper():
-                self._redis_ok = False
-                self._last_error = str(error)
-                raise
-            sha = await self._redis.script_load(script)
-            setattr(self, sha_attr, sha)
-            result = await asyncio.wait_for(
-                self._redis.evalsha(sha, len(keys), *keys, *args),
-                timeout=self._store_timeout_seconds,
-            )
-        if self._force_corrupt:
-            return ["corrupt"]
         self._redis_ok = True
         self._last_error = None
         return result
 
-    def _purge_memory(self, state: _MemoryWindow, now_ms: int) -> int:
+    def _expire_memory(self, state: _MemoryWindow, now_ms: int, keys_ttl_ms: int) -> int:
         expired_ids = [
-            res_id
-            for res_id, (expiry, _amt) in list(state.reservations.items())
-            if expiry <= now_ms
+            res_id for res_id, (expiry, _amt) in state.reservations.items() if expiry <= now_ms
         ]
-        released = 0
         for res_id in expired_ids:
             _expiry, amt = state.reservations.pop(res_id)
             state.reserved_micros = max(0, state.reserved_micros - amt)
-            released += amt
+            state.tombstones[res_id] = (now_ms + keys_ttl_ms, amt)
+        stale = [rid for rid, (forget, _a) in state.tombstones.items() if forget <= now_ms]
+        for rid in stale:
+            del state.tombstones[rid]
         return len(expired_ids)
+
+    @staticmethod
+    def _roll_window(state: _MemoryWindow, now_ms: int, window_ms: int) -> None:
+        if state.window_start_ms == 0 or (now_ms - state.window_start_ms) >= window_ms:
+            state.window_start_ms = now_ms
+            state.committed_micros = 0
+
+    def _deny_for(
+        self,
+        reason: str,
+        status_code: int,
+        scope: str,
+        scope_budget: ScopeBudget,
+        estimate_micros: int,
+        policy: InferenceBudgetPolicy,
+        *,
+        reserved: int = 0,
+        committed: int = 0,
+    ) -> BudgetDecision:
+        return _deny(
+            reason=reason,
+            status_code=status_code,
+            scope=scope,
+            estimated_usd=micros_to_usd(estimate_micros),
+            reserved_usd=micros_to_usd(reserved),
+            committed_usd=micros_to_usd(committed),
+            budget_usd=scope_budget.budget_usd,
+            policy_version=policy.version,
+            policy_sha256=policy.sha256(),
+        )
 
     async def reserve(
         self,
@@ -466,17 +610,19 @@ class InferenceBudgetGuard:
             )
 
         policy = self._policy
-        policy_sha = policy.sha256()
         scope, scope_budget = policy.scope_for(tenant_id, api_key)
-        if estimated_usd is None:
-            estimated_usd = policy.estimate_cost_usd(
-                model, input_tokens=input_tokens, output_tokens=output_tokens
-            )
-        estimate_micros = usd_to_micros(estimated_usd)
         started = time.perf_counter()
         backend = "redis" if self._redis is not None else "memory"
-
+        estimate_micros = 0
         try:
+            if estimated_usd is None:
+                estimate_micros = policy.estimate_cost_micros(
+                    model, input_tokens=input_tokens, output_tokens=output_tokens
+                )
+            else:
+                estimate_micros = charge_to_micros(estimated_usd)
+            if estimate_micros < 0:
+                raise ValueError("negative estimate")
             if self._redis is not None:
                 decision, reservation = await self._reserve_redis(
                     scope, scope_budget, estimate_micros, policy
@@ -485,35 +631,23 @@ class InferenceBudgetGuard:
                 decision, reservation = await self._reserve_memory(
                     scope, scope_budget, estimate_micros, policy
                 )
-        except TimeoutError:
+        except _STORE_TIMEOUT_ERRORS:
             BUDGET_RESERVE_LATENCY.labels(backend=backend).observe(time.perf_counter() - started)
-            return (
-                _deny(
-                    reason="store_timeout",
-                    status_code=503,
-                    scope=scope,
-                    estimated_usd=estimated_usd,
-                    budget_usd=scope_budget.budget_usd,
-                    policy_version=policy.version,
-                    policy_sha256=policy_sha,
-                ),
-                None,
-            )
+            return self._deny_for(
+                "store_timeout", 503, scope, scope_budget, estimate_micros, policy
+            ), None
+        except (TypeError, ValueError, ArithmeticError) as error:
+            self._last_error = str(error)
+            BUDGET_RESERVE_LATENCY.labels(backend=backend).observe(time.perf_counter() - started)
+            return self._deny_for(
+                "store_corrupt", 503, scope, scope_budget, estimate_micros, policy
+            ), None
         except Exception as error:  # noqa: BLE001 - fail closed on any store fault
             self._last_error = str(error)
             BUDGET_RESERVE_LATENCY.labels(backend=backend).observe(time.perf_counter() - started)
-            return (
-                _deny(
-                    reason="store_unavailable",
-                    status_code=503,
-                    scope=scope,
-                    estimated_usd=estimated_usd,
-                    budget_usd=scope_budget.budget_usd,
-                    policy_version=policy.version,
-                    policy_sha256=policy_sha,
-                ),
-                None,
-            )
+            return self._deny_for(
+                "store_unavailable", 503, scope, scope_budget, estimate_micros, policy
+            ), None
 
         BUDGET_RESERVE_LATENCY.labels(backend=backend).observe(time.perf_counter() - started)
         if decision.decision == "ALLOW":
@@ -536,14 +670,14 @@ class InferenceBudgetGuard:
         result = await self._eval(
             "_reserve_sha",
             _RESERVE_LUA,
-            [self._window_key(scope), self._reservations_key(scope), self._amounts_key(scope)],
+            self._keys(scope),
             [
                 now_ms,
                 int(scope_budget.window_seconds * 1000),
-                usd_to_micros(scope_budget.budget_usd),
+                budget_to_micros(scope_budget.budget_usd),
                 estimate_micros,
                 res_id,
-                int(scope_budget.reservation_ttl_seconds * 1000),
+                max(1, int(scope_budget.reservation_ttl_seconds * 1000)),
             ],
         )
         return self._interpret_reserve_result(
@@ -561,59 +695,25 @@ class InferenceBudgetGuard:
             raise ConnectionError("simulated budget store unavailable")
         if self._force_timeout:
             raise TimeoutError("simulated budget store timeout")
+        if self._force_corrupt:
+            return self._interpret_reserve_result(
+                ["corrupt"], scope, scope_budget, estimate_micros, policy, ""
+            )
         res_id = str(uuid.uuid4())
         now_ms = int(self._clock_ms())
+        window_ms = int(scope_budget.window_seconds * 1000)
+        ttl_ms = max(1, int(scope_budget.reservation_ttl_seconds * 1000))
         async with self._lock:
-            if self._force_corrupt:
-                return (
-                    _deny(
-                        reason="store_corrupt",
-                        status_code=503,
-                        scope=scope,
-                        estimated_usd=micros_to_usd(estimate_micros),
-                        budget_usd=scope_budget.budget_usd,
-                        policy_version=policy.version,
-                        policy_sha256=policy.sha256(),
-                    ),
-                    None,
-                )
             state = self._memory.setdefault(scope, _MemoryWindow())
-            self._purge_memory(state, now_ms)
-            window_ms = int(scope_budget.window_seconds * 1000)
-            if state.window_start_ms == 0 or (now_ms - state.window_start_ms) >= window_ms:
-                state.window_start_ms = now_ms
-                state.committed_micros = 0
-                state.reserved_micros = 0
-                state.reservations.clear()
-            budget_micros = usd_to_micros(scope_budget.budget_usd)
-            total = state.committed_micros + state.reserved_micros + estimate_micros
-            if total > budget_micros:
-                return (
-                    _deny(
-                        reason="budget_exceeded",
-                        status_code=429,
-                        scope=scope,
-                        estimated_usd=micros_to_usd(estimate_micros),
-                        reserved_usd=micros_to_usd(state.reserved_micros),
-                        committed_usd=micros_to_usd(state.committed_micros),
-                        budget_usd=scope_budget.budget_usd,
-                        policy_version=policy.version,
-                        policy_sha256=policy.sha256(),
-                    ),
-                    None,
-                )
-            state.reserved_micros += estimate_micros
-            state.reservations[res_id] = (
-                now_ms + int(scope_budget.reservation_ttl_seconds * 1000),
-                estimate_micros,
-            )
-            result = [
-                1,
-                state.committed_micros,
-                state.reserved_micros,
-                state.committed_micros + state.reserved_micros,
-                0,
-            ]
+            self._expire_memory(state, now_ms, max(window_ms, ttl_ms) * 4)
+            self._roll_window(state, now_ms, window_ms)
+            budget_micros = budget_to_micros(scope_budget.budget_usd)
+            if state.committed_micros + state.reserved_micros + estimate_micros > budget_micros:
+                result = [0, state.committed_micros, state.reserved_micros]
+            else:
+                state.reserved_micros += estimate_micros
+                state.reservations[res_id] = (now_ms + ttl_ms, estimate_micros)
+                result = [1, state.committed_micros, state.reserved_micros]
         return self._interpret_reserve_result(
             result, scope, scope_budget, estimate_micros, policy, res_id
         )
@@ -631,49 +731,28 @@ class InferenceBudgetGuard:
             code = int(result[0])  # type: ignore[index]
             committed = int(result[1])  # type: ignore[index]
             reserved = int(result[2])  # type: ignore[index]
-        except (TypeError, ValueError, IndexError):
-            return (
-                _deny(
-                    reason="store_corrupt",
-                    status_code=503,
-                    scope=scope,
-                    estimated_usd=micros_to_usd(estimate_micros),
-                    budget_usd=scope_budget.budget_usd,
-                    policy_version=policy.version,
-                    policy_sha256=policy.sha256(),
-                ),
-                None,
-            )
-        if code < 0:
-            return (
-                _deny(
-                    reason="store_corrupt",
-                    status_code=503,
-                    scope=scope,
-                    estimated_usd=micros_to_usd(estimate_micros),
-                    budget_usd=scope_budget.budget_usd,
-                    policy_version=policy.version,
-                    policy_sha256=policy.sha256(),
-                ),
-                None,
-            )
+        except (TypeError, ValueError, IndexError, KeyError):
+            return self._deny_for(
+                "store_corrupt", 503, scope, scope_budget, estimate_micros, policy
+            ), None
+        if code not in (0, 1) or committed < 0 or reserved < 0:
+            return self._deny_for(
+                "store_corrupt", 503, scope, scope_budget, estimate_micros, policy
+            ), None
         if code == 0:
-            return (
-                _deny(
-                    reason="budget_exceeded",
-                    status_code=429,
-                    scope=scope,
-                    estimated_usd=micros_to_usd(estimate_micros),
-                    reserved_usd=micros_to_usd(reserved),
-                    committed_usd=micros_to_usd(committed),
-                    budget_usd=scope_budget.budget_usd,
-                    policy_version=policy.version,
-                    policy_sha256=policy.sha256(),
-                ),
-                None,
-            )
-        total_usd = micros_to_usd(committed + reserved)
-        soft = total_usd >= scope_budget.budget_usd * scope_budget.soft_warning_ratio
+            return self._deny_for(
+                "budget_exceeded",
+                429,
+                scope,
+                scope_budget,
+                estimate_micros,
+                policy,
+                reserved=reserved,
+                committed=committed,
+            ), None
+        budget_micros = budget_to_micros(scope_budget.budget_usd)
+        soft_threshold = Decimal(budget_micros) * Decimal(str(scope_budget.soft_warning_ratio))
+        soft = Decimal(committed + reserved) >= soft_threshold
         decision = BudgetDecision(
             decision="ALLOW",
             reason="soft_warning" if soft else "within_budget",
@@ -696,23 +775,24 @@ class InferenceBudgetGuard:
             soft_warning=soft,
             policy_version=policy.version,
             policy_sha256=policy.sha256(),
+            window_ms=int(scope_budget.window_seconds * 1000),
         )
         return decision, reservation
 
     async def _settle(self, reservation: BudgetReservation, actual_micros: int) -> None:
+        actual_micros = max(0, int(actual_micros))
+        now_ms = int(self._clock_ms())
+        window_ms = reservation.window_ms or 3_600_000
         if self._redis is not None:
             try:
                 await self._eval(
                     "_settle_sha",
                     _SETTLE_LUA,
-                    [
-                        self._window_key(reservation.scope),
-                        self._reservations_key(reservation.scope),
-                        self._amounts_key(reservation.scope),
-                    ],
-                    [reservation.reservation_id, actual_micros],
+                    self._keys(reservation.scope),
+                    [reservation.reservation_id, actual_micros, now_ms, window_ms],
                 )
             except Exception as error:  # noqa: BLE001 - settlement lag is a documented limit
+                # The reservation stays held until its TTL; this only ever over-counts.
                 self._last_error = str(error)
                 self._redis_ok = False
             return
@@ -721,45 +801,47 @@ class InferenceBudgetGuard:
             if state is None:
                 return
             entry = state.reservations.pop(reservation.reservation_id, None)
-            if entry is None:
-                return
-            _expiry, reserved_amt = entry
-            state.reserved_micros = max(0, state.reserved_micros - reserved_amt)
-            state.committed_micros += max(0, actual_micros)
+            if entry is not None:
+                _expiry, reserved_amt = entry
+                state.reserved_micros = max(0, state.reserved_micros - reserved_amt)
+            elif state.tombstones.pop(reservation.reservation_id, None) is None:
+                return  # unknown or already settled: never double-count
+            self._roll_window(state, now_ms, window_ms)
+            state.committed_micros += actual_micros
 
     async def purge_expired(self, scope: str) -> int:
         now_ms = int(self._clock_ms())
         if self._redis is not None:
-            result = await self._eval(
-                "_purge_sha",
-                _PURGE_LUA,
-                [self._window_key(scope), self._reservations_key(scope), self._amounts_key(scope)],
-                [now_ms],
-            )
-            return int(result[0])  # type: ignore[index]
+            result = await self._eval("_purge_sha", _PURGE_LUA, self._keys(scope), [now_ms])
+            code = int(result[0])  # type: ignore[index]
+            if code < 0:
+                raise ValueError("corrupt budget store")
+            return code
         async with self._lock:
             state = self._memory.get(scope)
             if state is None:
                 return 0
-            return self._purge_memory(state, now_ms)
+            return self._expire_memory(state, now_ms, 4 * 3_600_000)
 
-    async def snapshot(self, scope: str) -> tuple[float, float]:
-        """Return (committed_usd, reserved_usd) for tests and status."""
+    async def snapshot_micros(self, scope: str) -> tuple[int, int]:
+        """Return (committed_micros, reserved_micros) after expiring stale reservations."""
+        now_ms = int(self._clock_ms())
         if self._redis is not None:
-            now_ms = int(self._clock_ms())
-            result = await self._eval(
-                "_purge_sha",
-                _PURGE_LUA,
-                [self._window_key(scope), self._reservations_key(scope), self._amounts_key(scope)],
-                [now_ms],
-            )
-            return micros_to_usd(int(result[2])), micros_to_usd(int(result[3]))  # type: ignore[index]
+            result = await self._eval("_purge_sha", _PURGE_LUA, self._keys(scope), [now_ms])
+            if int(result[0]) < 0:  # type: ignore[index]
+                raise ValueError("corrupt budget store")
+            return int(result[2]), int(result[3])  # type: ignore[index]
         async with self._lock:
             state = self._memory.get(scope)
             if state is None:
-                return 0.0, 0.0
-            self._purge_memory(state, int(self._clock_ms()))
-            return micros_to_usd(state.committed_micros), micros_to_usd(state.reserved_micros)
+                return 0, 0
+            self._expire_memory(state, now_ms, 4 * 3_600_000)
+            return state.committed_micros, state.reserved_micros
+
+    async def snapshot(self, scope: str) -> tuple[float, float]:
+        """Return (committed_usd, reserved_usd) for tests and status."""
+        committed, reserved = await self.snapshot_micros(scope)
+        return micros_to_usd(committed), micros_to_usd(reserved)
 
     async def aclose(self) -> None:
         if self._redis is not None:
