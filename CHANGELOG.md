@@ -4,6 +4,9 @@
 
 ### Added
 
+- Inference Budget Guard on the chat admission path: atomic reserve (tokens × price)
+  per tenant/API key, settle after usage, fail-closed on store/policy faults
+  (`INFERENCE_BUDGET_*`); design in `docs/budget-guard.md`; CI evidence envelopes
 - Fleet-wide tenant concurrency admission via Redis distributed semaphore (Lua acquire,
   lease TTL + renewal, fencing token, pod-death reclaim on expiry)
 - Per-tenant `redisUnavailablePolicy`: `fail_closed` (default), `degraded`, `fail_open`

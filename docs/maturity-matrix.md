@@ -9,6 +9,7 @@
 | Runtime status / verify | Supported | GitOps close-loop; signed verify token + JWKS; RBAC when JWT verify on |
 | HA closed-loop e2e | Supported | Nightly: 2 CP (Postgres) + 2 Runtime + Redis + OIDC |
 | Tenant-scoped decisions + admission | Supported | JWT tenant; Redis fleet-wide concurrency leases |
+| Inference budget guard | Supported | Atomic reserve/settle (Redis Lua); fail-closed; CI evidence |
 | Global admission / circuit / drain | Supported | Process-local capacity + SIGTERM drain |
 | Signed decision token | Supported | Optional; local request-digest binding when present |
 | Redis shared state (HA) | Supported | Required for replicas > 1; demo Redis is reference-only |

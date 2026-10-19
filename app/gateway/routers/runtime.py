@@ -46,6 +46,15 @@ async def runtime_status(request: Request) -> dict[str, Any]:
     admission = getattr(request.app.state, "admission", None)
     if admission is not None and hasattr(admission, "status"):
         payload["admission"] = admission.status()
+    budget_guard = getattr(request.app.state, "budget_guard", None)
+    if budget_guard is not None and hasattr(budget_guard, "status"):
+        payload["budget_guard"] = budget_guard.status()
+    elif getattr(request.app.state, "budget_policy_error", None):
+        payload["budget_guard"] = {
+            "enabled": True,
+            "ok": False,
+            "error": request.app.state.budget_policy_error,
+        }
     return payload
 
 

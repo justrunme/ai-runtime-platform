@@ -43,14 +43,22 @@ On `SIGTERM` / `SIGINT` (and during lifespan shutdown):
 See [tenant isolation](tenant-isolation.md) for semaphore semantics, fencing tokens,
 and per-tenant fail-closed / degraded / fail-open behaviour.
 
+## Inference budget guard
+
+Optional fail-closed spend admission (`INFERENCE_BUDGET_ENABLED`). See
+[budget-guard.md](budget-guard.md). Redis Lua (or in-process lock) reserves
+estimated USD before inference; store outages deny with `503`.
+
 ## Layering
 
 ```text
 drain check
   → global admission (process-local)
   → tenant / fleet admission (+ allowlist)
+  → inference budget reserve (optional, fail-closed)
   → Control Plane governance
   → circuit-aware routing
   → inference (+ retry budget on fallback)
+  → budget settle
 ```
 

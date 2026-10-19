@@ -74,20 +74,28 @@ Recommended pair: **Control Plane v2.5.x + Runtime v2.4.x**
 ```text
 OIDC Client
   → Runtime admission (global + tenant)
+  → Inference budget reserve (tokens × price, fail-closed)
   → Control Plane signed decision (+ local request-digest bind)
   → Model / MCP execution
-  → Enforcement evidence headers
+  → Budget settle + enforcement evidence headers
   → Usage event
   → Runtime verification (/v1/runtime/verify)
 ```
 
 This repository is the **Execution Plane**: routing, shared-state HA, observed streaming, Control Plane enforcement evidence, runtime verify, tenant isolation, MCP transport, and usage events. See [closed-loop contract](docs/closed-loop-contract.md), [auth boundary](docs/auth-boundary.md), [compatibility](docs/compatibility.md), [compatibility policy](docs/compatibility-matrix.md), [platform e2e](deploy/e2e/README.md), and [upgrade guide](docs/upgrade-guide.md).
 
+## Inference Budget Guard
+
+Before `/v1/chat/completions` executes, the gateway can **atomically reserve** estimated cost (`tokens × price`) against a per-tenant or per-key window budget (Redis Lua or in-process lock). Over-budget requests are refused (`429`); store/policy failures **fail closed** (`503`). After the request, the reservation is **settled** to actual priced usage (unused estimate refunded). Soft-warning threshold emits `X-AI-Budget-Warning` without denying.
+
+Design: [docs/budget-guard.md](docs/budget-guard.md) · Evidence: [docs/EVIDENCE.md](docs/EVIDENCE.md) (regenerate with `python scripts/generate_budget_evidence.py`). Claims are **on this test suite / this setup** only — estimates can differ from actual usage, and settlement can lag.
+
 ## Platform Signals
 
 | Runtime path | Production controls | Operational evidence |
 | --- | --- | --- |
 | OpenAI-compatible FastAPI gateway | Health-aware, fallback, canary, cost-aware routing, and governance enforcement | Animated routing demos and local response captures |
+| Inference budget guard | Atomic reserve / settle, fail-closed store errors, per-tenant & per-key budgets | Concurrency + negative tests in CI; ASC-shaped decision envelopes |
 | MCP + intent | Governed evaluate-tool then optional Streamable HTTP `tools/call`; `/v1/intent/resolve` | Requires Control Plane unless `MCP_ALLOW_UNGOVERNED` for demos |
 | vLLM and KServe serving examples | GPU scheduling, probes, ServiceMonitor, KEDA queue scaling | Helm, Kustomize, kubeconform, and Docker CI gates |
 | OpenTelemetry and Prometheus metrics | Request IDs, traces, routing labels, tenant attribution, fallback and cost metrics | Grafana dashboard, OTLP collector, signed release image |
