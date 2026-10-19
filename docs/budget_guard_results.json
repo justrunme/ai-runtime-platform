@@ -3,7 +3,7 @@
   "scope": "on this test suite",
   "policy_version": "budget-guard-1.0",
   "policy_sha256": "sha256:eff951135b69d4ff1a86da7f40775c60b3459a3462d46f4e88674d9a11e10d6c",
-  "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
+  "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
   "envelopes": [
     {
       "schema_version": "1.0.0",
@@ -14,9 +14,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "within_budget",
-      "trace_id": "c71841a7-087b-496f-a5f3-16d7edfc2ab1",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "5f4986f6-f4fc-4eb4-a0c2-b013bd42d3f1",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:research",
         "estimated_usd": 0.003,
@@ -27,7 +27,7 @@
         "status_code": 200,
         "iteration": 0
       },
-      "envelope_sha256": "sha256:cbc02953cf08510618972c50e4ff53083af73307681999bfbc0c9b943ae539bd"
+      "envelope_sha256": "sha256:56587df4d34543073a26b194a5ec33f0ae78f27dfaed505351199e16cf89f0b1"
     },
     {
       "schema_version": "1.0.0",
@@ -38,9 +38,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "within_budget",
-      "trace_id": "56320b3f-ae46-417f-8a17-cc3d254649f5",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "330aad78-73f5-433f-aa63-36c6074ca8d7",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:research",
         "estimated_usd": 0.003,
@@ -51,7 +51,7 @@
         "status_code": 200,
         "iteration": 1
       },
-      "envelope_sha256": "sha256:85f57d79811526648e4a5f1854fea01751efad4b5ec0df4c4b0e1768d9d9a90a"
+      "envelope_sha256": "sha256:0a060e9abeb2807ec6d37aff1a516ada25435e7e0f29f4d8c83ceb4eca99fd68"
     },
     {
       "schema_version": "1.0.0",
@@ -62,9 +62,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "within_budget",
-      "trace_id": "0e7234ad-c087-4354-a34f-ebd8c5a5610c",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "c631e3ed-554a-41af-9221-4df034ce883e",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:research",
         "estimated_usd": 0.003,
@@ -75,7 +75,7 @@
         "status_code": 200,
         "iteration": 2
       },
-      "envelope_sha256": "sha256:763b6e88a7edb82d2d6e942dfe1e9ec87d96be3190fc1c0add427b649f222e59"
+      "envelope_sha256": "sha256:4eb3404bbb119180b476416dd0c9101cea8346eeaac70ab67106f38964c10675"
     },
     {
       "schema_version": "1.0.0",
@@ -86,9 +86,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "within_budget",
-      "trace_id": "e4c222d9-d6c3-481d-b613-277e142a9230",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "1cf08d4d-e2b6-4d03-9149-2731949e6422",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:research",
         "estimated_usd": 0.003,
@@ -99,7 +99,7 @@
         "status_code": 200,
         "iteration": 3
       },
-      "envelope_sha256": "sha256:03ccc098953a448cb2c74f16ccd5ec98d9e02f56e2637e4d9643bda324060ca8"
+      "envelope_sha256": "sha256:72371025b8258ce8f5f5257ffe93cc688c49c9d416e691e12afbb9f8317bde1f"
     },
     {
       "schema_version": "1.0.0",
@@ -110,9 +110,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "within_budget",
-      "trace_id": "0e0b40de-0422-4c3f-8535-29a3ce1fac0c",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "2c32551d-728c-4c48-9332-a8294de15a2d",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:research",
         "estimated_usd": 0.003,
@@ -123,7 +123,7 @@
         "status_code": 200,
         "iteration": 4
       },
-      "envelope_sha256": "sha256:28630abaacbf1688e1a9cf8aa77459ba7f4cf705eb5f4bb610977f1d78086d4f"
+      "envelope_sha256": "sha256:73669fb12141b15a96c46fdf1b24c341e7749136d63936b82002a399d8c9adaa"
     },
     {
       "schema_version": "1.0.0",
@@ -134,9 +134,9 @@
       "verdict": "BLOCK",
       "acs_disposition": "DENY",
       "reason": "budget_exceeded",
-      "trace_id": "37ae7e5e-0db6-45a2-a76a-ca66bac1a83b",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "7febdf4c-44a2-4217-936c-f7e43386d0bb",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.2,
@@ -146,7 +146,7 @@
         "soft_warning": false,
         "status_code": 429
       },
-      "envelope_sha256": "sha256:2147e8f11c4662cf568a2eaa495abf23be46e913715915b825c17ab340afc5cc"
+      "envelope_sha256": "sha256:f537a4d1dbe115908128286d6f685e9f0b8de4931756897da16eaa0035841ef8"
     },
     {
       "schema_version": "1.0.0",
@@ -157,9 +157,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "within_budget",
-      "trace_id": "82e26648-4a67-4e3e-adff-6dd610a3dfe6",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "17e5f223-3cf7-4aaa-87e8-0914cb2a4608",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.05,
@@ -171,7 +171,7 @@
         "committed_after": 0.01,
         "reserved_after": 0.0
       },
-      "envelope_sha256": "sha256:dacf7fc4d37fbe8e6f6e3e96a89c515d721ae6d4979af5c976f493dd94205630"
+      "envelope_sha256": "sha256:ca85e4b541c785585bf063aff0e0c9d6914abea7397ee7bd8a05d89aa6488e74"
     },
     {
       "schema_version": "1.0.0",
@@ -182,9 +182,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "within_budget",
-      "trace_id": "52b8c8ad-d6c6-4491-9f15-cf39ab3d5123",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "defc0d84-73ae-4eb5-9185-955901c4ae4b",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.05,
@@ -196,7 +196,7 @@
         "purged": 1,
         "reserved_after": 0.0
       },
-      "envelope_sha256": "sha256:14cd04af6d692cd1d11c9851efc0fcb173aeae81a119ade0610f454661ecead1"
+      "envelope_sha256": "sha256:6e158b3b2f18bf70ae25e26a56b0b3f71fa61f7e88f6675d6c1e0ad4a2875cf5"
     },
     {
       "schema_version": "1.0.0",
@@ -207,9 +207,9 @@
       "verdict": "BLOCK",
       "acs_disposition": "DENY",
       "reason": "store_unavailable",
-      "trace_id": "c00706ed-2350-4dcd-b343-24d6a1383844",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "96057eb3-fcbf-4679-9759-64733b27bbb7",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.001,
@@ -219,7 +219,7 @@
         "soft_warning": false,
         "status_code": 503
       },
-      "envelope_sha256": "sha256:0bd02dee091570b457c6f02d57e7274620d90c31ab1ebedd81a507412b2d0719"
+      "envelope_sha256": "sha256:9b3b6382e8d582e02b5679fc338beae24bc513a91da1dabe56b5fcc8e5eb5dcc"
     },
     {
       "schema_version": "1.0.0",
@@ -230,9 +230,9 @@
       "verdict": "BLOCK",
       "acs_disposition": "DENY",
       "reason": "store_timeout",
-      "trace_id": "8d6fba9f-f583-49cc-9a0c-fa071438a0e4",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "a477b210-e88d-4690-8826-f845267ce069",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.001,
@@ -242,7 +242,7 @@
         "soft_warning": false,
         "status_code": 503
       },
-      "envelope_sha256": "sha256:8045c412bd6c98ab325d6af523e01c48dab4e7e8a42cd0c0aeee78f7a72ff066"
+      "envelope_sha256": "sha256:9a5f0fcbd4b06cf91e5e2fd17b4528467b7ba7dfd1e869d12de146c31f249442"
     },
     {
       "schema_version": "1.0.0",
@@ -253,9 +253,9 @@
       "verdict": "BLOCK",
       "acs_disposition": "DENY",
       "reason": "store_corrupt",
-      "trace_id": "32109f4c-7f03-4b9d-bca1-9b8bb48fa85e",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "0e304c25-c670-491b-a4c2-abb979b51728",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.001,
@@ -265,7 +265,7 @@
         "soft_warning": false,
         "status_code": 503
       },
-      "envelope_sha256": "sha256:682a545f75dc38106350ef5980fb172ed303b58fdda742eb0b42e2c39109b148"
+      "envelope_sha256": "sha256:d12ff3581f1ceadb45cf9031996a6066f58fe7513a0d801f6c6604f9789dc728"
     },
     {
       "schema_version": "1.0.0",
@@ -276,9 +276,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "concurrency_invariant_held",
-      "trace_id": "d3520a39-8b93-4c48-8db2-4f178d2839d0",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "77f2b7ce-9060-4b63-8933-e8001e6a2120",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:55Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.02,
@@ -291,7 +291,7 @@
         "parallel": 40,
         "max_allows_observed": 5
       },
-      "envelope_sha256": "sha256:5f0cbf6156745fd37423b048dc4ea35eb7e25966666b720845110fb84eb63515"
+      "envelope_sha256": "sha256:5da08780379c7e0f39c661c53a8b06bf3bf02d05c2e32f60ebe751a443cc905d"
     },
     {
       "schema_version": "1.0.0",
@@ -302,9 +302,9 @@
       "verdict": "ALLOW",
       "acs_disposition": "ALLOW",
       "reason": "concurrency_invariant_held",
-      "trace_id": "35b141b8-14fa-4615-abfd-3d9a5852af02",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "d33ac170-4a02-4e3d-a2fc-11c7740117bc",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:56Z",
       "details": {
         "scope": "tenant:finance",
         "estimated_usd": 0.02,
@@ -317,7 +317,7 @@
         "parallel": 40,
         "max_allows_observed": 5
       },
-      "envelope_sha256": "sha256:e6eba60c79b55724c5a807e7911846e3b3dff02b06dfd55b792d813a9ddc8f0c"
+      "envelope_sha256": "sha256:fe5f842d92297b46011176653c18deac608fca0f21c1ed76a30de37f8132db16"
     },
     {
       "schema_version": "1.0.0",
@@ -328,9 +328,9 @@
       "verdict": "BLOCK",
       "acs_disposition": "DENY",
       "reason": "malformed_policy",
-      "trace_id": "dbe83352-a273-4e8a-bb26-95d0ce756e62",
-      "commit_sha": "307943d1fe5615c6695e3c121a5dc8e45f0942a1",
-      "timestamp": "2026-10-19T16:42:00Z",
+      "trace_id": "39354655-8ee3-43fe-a264-ea54331ae890",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:02:56Z",
       "details": {
         "scope": "",
         "estimated_usd": 0.0,
@@ -340,12 +340,65 @@
         "soft_warning": false,
         "status_code": 503
       },
-      "envelope_sha256": "sha256:928dfb48b845545daa16d0d887b1d7ee987a43d93e655872705a1ac3de1a41c1"
+      "envelope_sha256": "sha256:9dd97b1654c7453bce9ef38dcc75f1b58e65968306dcec121216713edd8681b5"
+    },
+    {
+      "schema_version": "1.0.0",
+      "policy_version": "budget-guard-1.0",
+      "policy_sha256": "sha256:eff951135b69d4ff1a86da7f40775c60b3459a3462d46f4e88674d9a11e10d6c",
+      "scenario_id": "concurrency_atomic_redis_real_multiprocess",
+      "decision": "ALLOW",
+      "verdict": "ALLOW",
+      "acs_disposition": "ALLOW",
+      "reason": "concurrency_invariant_held",
+      "trace_id": "201a38a4-f344-4387-b154-5a77ac9c2a15",
+      "commit_sha": "fee974a25d4d939e2d170ffa737b74ca0de2b0d3",
+      "timestamp": "2026-10-19T17:03:18Z",
+      "details": {
+        "scope": "tenant:mp",
+        "estimated_usd": 0.007,
+        "reserved_usd": 0.994,
+        "committed_usd": 0.0,
+        "budget_usd": 1.0,
+        "soft_warning": false,
+        "status_code": 200,
+        "rounds": 10,
+        "processes": 8,
+        "attempts_per_round": 200,
+        "allows_per_round": 142
+      },
+      "envelope_sha256": "sha256:228add4d58ef88a7d77ad65b5394796e04e164b6b6e397ca61a79b7e3f41c582"
     }
   ],
   "concurrency": {
-    "rounds_per_backend": 25,
-    "parallel_requests": 40,
+    "invariant": "committed_plus_reserved_le_budget (integer micro-USD)",
+    "overspend_events": 0,
+    "single_process": {
+      "backends": [
+        "memory",
+        "fakeredis"
+      ],
+      "rounds_per_backend": 25,
+      "parallel_requests": 40,
+      "note": "asyncio.gather in one process; fakeredis serialises calls"
+    },
+    "real_redis_multiprocess": {
+      "rounds": 10,
+      "processes": 8,
+      "attempts_per_round": 200,
+      "allows_per_round": [
+        142
+      ],
+      "expected_allows_per_round": 142,
+      "max_reserved_micros": 994000,
+      "budget_micros": 1000000
+    },
+    "real_redis_multiprocess_settle": {
+      "rounds": 10,
+      "allows_total": 2806,
+      "exact_committed_rounds": 10,
+      "leaked_reserved_micros": 0
+    },
     "results": [
       {
         "backend": "memory",
@@ -623,7 +676,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 0,
         "allows": 5,
         "denies": 35,
@@ -634,7 +687,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 1,
         "allows": 5,
         "denies": 35,
@@ -645,7 +698,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 2,
         "allows": 5,
         "denies": 35,
@@ -656,7 +709,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 3,
         "allows": 5,
         "denies": 35,
@@ -667,7 +720,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 4,
         "allows": 5,
         "denies": 35,
@@ -678,7 +731,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 5,
         "allows": 5,
         "denies": 35,
@@ -689,7 +742,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 6,
         "allows": 5,
         "denies": 35,
@@ -700,7 +753,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 7,
         "allows": 5,
         "denies": 35,
@@ -711,7 +764,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 8,
         "allows": 5,
         "denies": 35,
@@ -722,7 +775,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 9,
         "allows": 5,
         "denies": 35,
@@ -733,7 +786,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 10,
         "allows": 5,
         "denies": 35,
@@ -744,7 +797,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 11,
         "allows": 5,
         "denies": 35,
@@ -755,7 +808,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 12,
         "allows": 5,
         "denies": 35,
@@ -766,7 +819,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 13,
         "allows": 5,
         "denies": 35,
@@ -777,7 +830,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 14,
         "allows": 5,
         "denies": 35,
@@ -788,7 +841,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 15,
         "allows": 5,
         "denies": 35,
@@ -799,7 +852,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 16,
         "allows": 5,
         "denies": 35,
@@ -810,7 +863,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 17,
         "allows": 5,
         "denies": 35,
@@ -821,7 +874,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 18,
         "allows": 5,
         "denies": 35,
@@ -832,7 +885,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 19,
         "allows": 5,
         "denies": 35,
@@ -843,7 +896,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 20,
         "allows": 5,
         "denies": 35,
@@ -854,7 +907,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 21,
         "allows": 5,
         "denies": 35,
@@ -865,7 +918,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 22,
         "allows": 5,
         "denies": 35,
@@ -876,7 +929,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 23,
         "allows": 5,
         "denies": 35,
@@ -887,7 +940,7 @@
         "max_allows": 5
       },
       {
-        "backend": "redis",
+        "backend": "fakeredis",
         "round": 24,
         "allows": 5,
         "denies": 35,
@@ -896,18 +949,237 @@
         "total_usd": 0.1,
         "budget_usd": 0.1,
         "max_allows": 5
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 0,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 1,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 2,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 3,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 4,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 5,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 6,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 7,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 8,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess",
+        "round": 9,
+        "processes": 8,
+        "attempts": 200,
+        "allows": 142,
+        "denies": 58,
+        "max_allows": 142,
+        "reserved_micros": 994000,
+        "committed_micros": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 0,
+        "processes": 8,
+        "allows": 281,
+        "committed_micros": 990644,
+        "expected_committed_micros": 990644,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 1,
+        "processes": 8,
+        "allows": 274,
+        "committed_micros": 988164,
+        "expected_committed_micros": 988164,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 2,
+        "processes": 8,
+        "allows": 286,
+        "committed_micros": 983905,
+        "expected_committed_micros": 983905,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 3,
+        "processes": 8,
+        "allows": 260,
+        "committed_micros": 994991,
+        "expected_committed_micros": 994991,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 4,
+        "processes": 8,
+        "allows": 307,
+        "committed_micros": 993537,
+        "expected_committed_micros": 993537,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 5,
+        "processes": 8,
+        "allows": 265,
+        "committed_micros": 987291,
+        "expected_committed_micros": 987291,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 6,
+        "processes": 8,
+        "allows": 294,
+        "committed_micros": 999750,
+        "expected_committed_micros": 999750,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 7,
+        "processes": 8,
+        "allows": 267,
+        "committed_micros": 996202,
+        "expected_committed_micros": 996202,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 8,
+        "processes": 8,
+        "allows": 314,
+        "committed_micros": 991106,
+        "expected_committed_micros": 991106,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
+      },
+      {
+        "backend": "redis-real-multiprocess-settle",
+        "round": 9,
+        "processes": 8,
+        "allows": 258,
+        "committed_micros": 999754,
+        "expected_committed_micros": 999754,
+        "reserved_micros_after": 0,
+        "budget_micros": 1000000
       }
-    ],
-    "invariant": "total_reserved_plus_committed_le_budget",
-    "max_total_usd_observed": 0.1,
-    "budget_usd": 0.1,
-    "overspend_events": 0
+    ]
   },
   "false_deny_count_legitimate": 0,
   "limits": [
     "Claims apply on this test suite / this setup only.",
     "Pre-request estimate can differ from actual token usage.",
     "Settlement can lag if the store is unavailable after upstream success; expired reservations are released by TTL.",
-    "In-memory backend proves single-process atomicity; Redis/fakeredis proves Lua atomicity on this CI setup \u2014 not multi-region billing."
+    "Unknown actual usage (no usage block, e.g. most streams) is charged at the estimate; actual spend above the estimate is committed as-is, so committed spend can exceed the budget by at most the in-flight estimate error.",
+    "Estimate prices come from the budget policy; settlement prices from gateway model targets. Keep the two tables aligned.",
+    "Reservation expiry uses each gateway's wall clock; large clock skew between replicas shifts TTL release.",
+    "In-memory backend is per process. Lua atomicity is exercised against a real Redis server (CI service container) with multiple OS processes \u2014 one Redis, not multi-region billing."
   ]
 }
