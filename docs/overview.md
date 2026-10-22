@@ -40,4 +40,4 @@ Agent intent → Execution Plane /v1/intent/resolve → Control Plane /intent/re
 Tool call → Execution Plane /mcp/tools/{tool}/call → Control Plane /governance/evaluate-tool
 ```
 
-See [runtime enforcement mode](runtime-enforcement-mode.md) and the [control plane portfolio overview](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/portfolio-overview.md).
+See [runtime enforcement mode](runtime-enforcement-mode.md) and the [control plane overview](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/overview.md).
