@@ -64,6 +64,13 @@ This repository is the public evidence base for:
 | Cloud-Native AI Gateway | https://justrunme.com/cases/cloud-native-ai-gateway/ |
 | LLM Infrastructure Runtime | https://justrunme.com/cases/llm-infrastructure-runtime/ |
 
+Read more:
+
+- [LLM inference on Kubernetes](https://justrunme.com/llm-inference-kubernetes/)
+- [KServe vs vLLM](https://justrunme.com/guides/kserve-vs-vllm/)
+- [vLLM autoscaling with KEDA](https://justrunme.com/guides/vllm-autoscaling-keda/)
+- [OpenTelemetry for LLM observability](https://justrunme.com/guides/opentelemetry-llm-observability/)
+
 Site: [justrunme.com](https://justrunme.com/) · Author: [Andrey Lesnikov](https://justrunme.com/about/)
 
 > **Execution Plane v2.4** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
