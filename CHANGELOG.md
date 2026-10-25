@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-10-25
+
+### Fixed
+
+- A tenant claim made only of whitespace no longer resolves to an empty tenant id; resolution falls through to the next claim or the default bucket
+
+### Security
+
+- Release workflow and CI follow least-privilege token permissions; third-party actions and downloaded binaries are pinned and checksum-verified
+- Release assets include a keyless cosign bundle for the SBOM
+- Property-based fuzz tests (Hypothesis) for JWT, request digest, MCP transport, tenant and budget policy parsing
+
 ## [2.5.0] - 2026-10-19
 
 ### Added

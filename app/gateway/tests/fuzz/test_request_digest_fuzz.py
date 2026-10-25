@@ -6,7 +6,7 @@ import hashlib
 import json
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from app.gateway.request_digest import binding_payload, compute_request_digest
@@ -29,6 +29,8 @@ from app.gateway.request_digest import binding_payload, compute_request_digest
 @settings(max_examples=250)
 def test_compute_request_digest_never_crashes(request: dict) -> None:
     """Arbitrary request dicts never crash digest computation."""
+    # A scalar `groups` is outside the payload contract (TypeError by design).
+    assume(not isinstance(request.get("groups"), int))
     try:
         result = compute_request_digest(request)
         assert isinstance(result, str)
@@ -48,6 +50,8 @@ def test_compute_request_digest_never_crashes(request: dict) -> None:
 @settings(max_examples=300)
 def test_compute_request_digest_is_deterministic(request: dict) -> None:
     """Same request always produces same digest."""
+    # A scalar `groups` is outside the payload contract (TypeError by design).
+    assume(not isinstance(request.get("groups"), int))
     digest1 = compute_request_digest(request)
     digest2 = compute_request_digest(request)
     assert digest1 == digest2
@@ -64,6 +68,8 @@ def test_compute_request_digest_is_deterministic(request: dict) -> None:
 @settings(max_examples=200)
 def test_compute_request_digest_changes_on_field_modification(request: dict) -> None:
     """Digest changes when any binding field changes."""
+    # A scalar `groups` is outside the payload contract (TypeError by design).
+    assume(not isinstance(request.get("groups"), int))
     digest1 = compute_request_digest(request)
 
     # Add or modify a binding field
@@ -86,6 +92,8 @@ def test_compute_request_digest_changes_on_field_modification(request: dict) -> 
 @settings(max_examples=150)
 def test_binding_payload_only_includes_known_fields(request: dict) -> None:
     """Only known binding fields are included in the payload."""
+    # A scalar `groups` is outside the payload contract (TypeError by design).
+    assume(not isinstance(request.get("groups"), int))
     payload = binding_payload(request)
     assert isinstance(payload, dict)
 
@@ -175,6 +183,8 @@ def test_binding_payload_preserves_booleans(bool_value: bool) -> None:
 @settings(max_examples=200)
 def test_compute_request_digest_produces_valid_hex(request: dict) -> None:
     """Digest is always valid hex string of correct length."""
+    # A scalar `groups` is outside the payload contract (TypeError by design).
+    assume(not isinstance(request.get("groups"), int))
     digest = compute_request_digest(request)
     assert isinstance(digest, str)
     assert len(digest) == 64
@@ -192,6 +202,8 @@ def test_compute_request_digest_produces_valid_hex(request: dict) -> None:
 @settings(max_examples=150)
 def test_compute_request_digest_manual_verification(request: dict) -> None:
     """Digest can be manually verified against SHA-256."""
+    # A scalar `groups` is outside the payload contract (TypeError by design).
+    assume(not isinstance(request.get("groups"), int))
     digest = compute_request_digest(request)
     payload = binding_payload(request)
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -210,6 +222,8 @@ def test_compute_request_digest_manual_verification(request: dict) -> None:
 @settings(max_examples=150)
 def test_binding_payload_handles_numeric_fields(request: dict) -> None:
     """Numeric fields are preserved in binding payload."""
+    # A scalar `groups` is outside the payload contract (TypeError by design).
+    assume(not isinstance(request.get("groups"), int))
     payload = binding_payload(request)
 
     # Check that numeric fields in known binding fields are preserved

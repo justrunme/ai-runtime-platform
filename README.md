@@ -75,7 +75,7 @@ Site: [justrunme.com](https://justrunme.com/) · Author: [Andrey Lesnikov](https
 
 > **Execution Plane v2.4** of the [AI Infrastructure OS](https://github.com/justrunme/ai-infra-control-plane/blob/main/docs/product-roadmap.md) — stable closed-loop contract: authenticate → ask Control Plane → route → execute → observe → prove.
 
-Current release: **Runtime v2.5.0**  
+Current release: **Runtime v2.5.1**  
 Recommended pair: **Control Plane v2.5.x + Runtime v2.4.x**
 
 ```text
