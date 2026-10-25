@@ -35,7 +35,9 @@ def resolve_tenant_id(request: Request) -> str:
     for key in ("tenant_id", "tenant", "team"):
         value = claims.get(key)
         if value not in (None, ""):
-            return str(value).strip()
+            stripped = str(value).strip()
+            if stripped:
+                return stripped
     if is_jwt_verify_enabled():
         # Authenticated but untentanted token — isolate into a dedicated bucket.
         subject = str(claims.get("sub") or claims.get("preferred_username") or "unknown")

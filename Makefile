@@ -5,10 +5,16 @@ PYTHON ?= python3
 .PHONY: help test lint fmt fmt-check helm-lint render validate
 
 help:
-	@printf '%s\n' 'Targets: test lint fmt fmt-check helm-lint render validate'
+	@printf '%s\n' 'Targets: test lint fmt fmt-check helm-lint render validate fuzz-test fuzz-intensive'
 
 test:
 	$(PYTHON) -m pytest
+
+fuzz-test:
+	$(PYTHON) -m pytest app/gateway/tests/fuzz/
+
+fuzz-intensive:
+	$(PYTHON) -m pytest app/gateway/tests/fuzz/ --hypothesis-seed=random -v
 
 lint:
 	$(PYTHON) -m ruff check app experiments

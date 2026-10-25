@@ -43,7 +43,16 @@ def binding_payload(request: Mapping[str, Any]) -> dict[str, Any]:
     for key in _BINDING_FIELDS:
         value = request.get(key)
         if key == "groups":
-            payload[key] = sorted(str(item) for item in (value or []))
+            # Handle non-iterable groups gracefully
+            if isinstance(value, (list, tuple)):
+                payload[key] = sorted(str(item) for item in value)
+            elif isinstance(value, str):
+                payload[key] = sorted(str(item) for item in [value])
+            elif value is None:
+                payload[key] = []
+            else:
+                # Non-iterable value (int, bool, etc.) - treat as empty
+                payload[key] = []
         elif key == "tenant_id":
             payload[key] = str(value or request.get("team") or "")
         elif isinstance(value, bool):
