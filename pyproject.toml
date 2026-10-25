@@ -25,6 +25,7 @@ dependencies = [
 dev = [
   "anyio>=4.4,<5.0",
   "fakeredis[lua]>=2.23,<3.0",
+  "hypothesis>=6.0,<7.0",
   "openai>=1.40,<4.0",
   "pytest>=8.3,<10.0",
   "ruff>=0.8,<1.0",
