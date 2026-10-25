@@ -131,31 +131,18 @@ def test_binding_payload_normalizes_groups(groups: list[str]) -> None:
     assert result_groups == sorted(str(item) for item in groups)
 
 
-def test_binding_payload_groups_non_iterable_regression() -> None:
-    """Regression test: non-iterable groups should not crash.
+def test_binding_payload_groups_none_and_scalar_contract() -> None:
+    """None means no groups; a non-iterable scalar is rejected, never silently coerced.
 
-    This bug was discovered by fuzz testing. Previously, groups as an integer
-    or other non-iterable type would cause a TypeError.
+    Coercing a tampered scalar to an empty list would make two different requests
+    share one digest, so the payload builder keeps raising TypeError here.
     """
-    # Integer groups
-    request = {"groups": 123}
-    payload = binding_payload(request)
-    assert payload.get("groups") == []
+    assert binding_payload({"groups": None})["groups"] == []
+    assert binding_payload({})["groups"] == []
+    for bad in (123, True):
+        with pytest.raises(TypeError):
+            binding_payload({"groups": bad})
 
-    # Boolean groups
-    request = {"groups": True}
-    payload = binding_payload(request)
-    assert payload.get("groups") == []
-
-    # None groups
-    request = {"groups": None}
-    payload = binding_payload(request)
-    assert payload.get("groups") == []
-
-    # String groups (treated as single-item list)
-    request = {"groups": "admin"}
-    payload = binding_payload(request)
-    assert payload.get("groups") == ["admin"]
 
 
 @given(st.one_of(st.text(), st.integers(), st.none()))
