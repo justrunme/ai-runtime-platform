@@ -5,10 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   # Compatibility proof must pass before publishing image/chart.
@@ -23,6 +20,9 @@ jobs:
             image: ghcr.io/justrunme/ai-infra-control-plane@sha256:38b4de3e5bbcbfcb4012d9b16650139eb58171cec29aed7424dad807100f0450
           - control_plane: "1.3.0" # legacy compatibility
             image: ghcr.io/justrunme/ai-infra-control-plane@sha256:29d282ab7d0b60742e56e44aaeca76054cca4d5358d165f80ae47c37ae3c4ec6
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/platform-e2e-real-cp-reusable.yaml
     with:
       control_plane_image: ${{ matrix.image }}
@@ -31,6 +31,11 @@ jobs:
   release:
     needs: [real-control-plane]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release and upload assets
+      packages: write # push image and chart to GHCR
+      id-token: write # keyless cosign signing and provenance
+      attestations: write # build provenance attestation
     env:
       IMAGE: ghcr.io/${{ github.repository }}
     steps:
@@ -86,12 +91,24 @@ jobs:
           upload-artifact: true
           upload-release-assets: false
 
-      - name: Attach SBOM to release
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign SBOM (keyless)
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle ai-runtime-gateway-sbom.spdx.json.sigstore.json \
+            ai-runtime-gateway-sbom.spdx.json
+
+      - name: Attach SBOM and signature bundle to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release upload "${GITHUB_REF_NAME}" ai-runtime-gateway-sbom.spdx.json --clobber
+          gh release upload "${GITHUB_REF_NAME}" \
+            ai-runtime-gateway-sbom.spdx.json \
+            ai-runtime-gateway-sbom.spdx.json.sigstore.json --clobber
 
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -102,9 +119,6 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
