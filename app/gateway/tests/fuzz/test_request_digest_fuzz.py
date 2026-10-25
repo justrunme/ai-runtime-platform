@@ -144,7 +144,6 @@ def test_binding_payload_groups_none_and_scalar_contract() -> None:
             binding_payload({"groups": bad})
 
 
-
 @given(st.one_of(st.text(), st.integers(), st.none()))
 @settings(max_examples=150)
 def test_binding_payload_tenant_id_fallback(tenant_value) -> None:
@@ -247,5 +246,3 @@ def test_compute_request_digest_different_subjects_different_digest(
     digest2 = compute_request_digest(request2)
 
     assert digest1 != digest2
-
-
