@@ -542,6 +542,11 @@ Measured from CI (not estimates). Details: [docs/results.md](docs/results.md) ·
 | Golden-path suite duration | **21.5 s** | same (job log wall clock) |
 
 
+## Author
+
+Andrey Lesnikov — Senior DevOps & AI Platform Engineer  
+https://orcid.org/0009-0004-7583-4314
+
 ## Security note
 
 No production secret, token, model licence acceptance, or cloud credential belongs in this repository. Supply them through the cluster's secret-management and workload-identity mechanism. Released images are signed with cosign, scanned with Trivy, and published with an SBOM; see [SECURITY.md](SECURITY.md) for verification and reporting.
