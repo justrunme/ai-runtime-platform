@@ -65,7 +65,8 @@ jobs:
           push: false
           tags: ai-runtime-gateway:ci
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # PRs only have contents:read; writing GHA cache fails with "no writable scopes".
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
 
   platform-e2e:
     runs-on: ubuntu-latest
